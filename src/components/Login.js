@@ -1,24 +1,47 @@
-import React, { useState, useContext } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { login, getEmployeeDetailsByUsername } from '../../api';
-import { EmployeeContext } from '../context/EmployeeContext';
+import React, {useState, useContext} from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  Alert,
+} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
+import {login, getEmployeeDetailsByUsername} from '../../api';
+import {EmployeeContext} from '../context/EmployeeContext';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { setEmployeeDetails } = useContext(EmployeeContext);
+  const {employeeDetails, setEmployeeDetails} = useContext(EmployeeContext);
 
   const handleLogin = async () => {
     try {
-      await login(email, password);
-      const employeeDetails = await getEmployeeDetailsByUsername(email);
-      console.log('Fetched employee details:', employeeDetails);
-      setEmployeeDetails(employeeDetails);
-      navigation.navigate('AttendanceManagement');
+      console.log('Attempting to login with email:', email); // Log email
+      const response = await login(email, password);
+      console.log('Login response:', response); // Log the response
+
+      if (response.message === 'Logged In') {
+        const employeeDetails = await getEmployeeDetailsByUsername(email);
+        console.log('Fetched employee details:', employeeDetails);
+        setEmployeeDetails(employeeDetails);
+        console.log('Context employeeDetails:', employeeDetails); // Log context details
+        console.log('Navigating to Attendance');
+        // After successful login
+        navigation.navigate('Home', {screen: 'Attendance'});
+      } else {
+        Alert.alert('Login Failed', 'Invalid email or password');
+      }
     } catch (error) {
+      if (error.response) {
+        console.error('Login error response:', error.response.data); // Log the error response data
+      } else {
+        console.error('Login error:', error.message); // Log the error message
+      }
       Alert.alert('Login Failed', 'Invalid email or password');
     }
   };
@@ -48,9 +71,13 @@ const LoginScreen = () => {
           onChangeText={setPassword}
         />
         <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-          <Image 
-            source={showPassword ? require('./images/eye-icon.png') : require('./images/eye-off-icon.png')} 
-            style={styles.icon} 
+          <Image
+            source={
+              showPassword
+                ? require('./images/eye-icon.png')
+                : require('./images/eye-off-icon.png')
+            }
+            style={styles.icon}
           />
         </TouchableOpacity>
       </View>

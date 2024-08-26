@@ -1,57 +1,60 @@
-import React, { useState, useContext, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import React, {useState, useContext, useEffect} from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+} from 'react-native';
+import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import Modal from 'react-native-modal';
-import { Picker } from '@react-native-picker/picker';
-import { EmployeeContext } from '../context/EmployeeContext';
-import { requestQuotation, getQuotations, getSuppliers, getItems, getSeriesOptions, getUOMs, getWarehouses } from '../../api';
-import { useNavigation } from '@react-navigation/native'; // Import navigation
+import {EmployeeContext} from '../context/EmployeeContext';
+import {
+  getSuppliers,
+  getItemsList,
+  getUOMs,
+  getWarehouses,
+  requestQuotation,
+} from '../../api';
 
 const RequestForQuotation = () => {
-  const { employeeDetails } = useContext(EmployeeContext);
+  const {employeeDetails} = useContext(EmployeeContext);
+  const [suppliers, setSuppliers] = useState([
+    {supplier: '', contact: '', email: ''},
+  ]);
+  const [items, setItems] = useState([
+    {
+      itemCode: '',
+      quantity: '0.000000000',
+      uom: '',
+      warehouse: '',
+      requiredDate: new Date(),
+      showDatePicker: false,
+      conversion_factor: 1,  // Default conversion factor is 1
+    },
+  ]);
+  
+  const [date, setDate] = useState(new Date());
   const [series, setSeries] = useState('RFQ-DM-.YYYY.-');
   const [company, setCompany] = useState('Durar Masagh Trading Company');
-  const [supplier, setSupplier] = useState('');
-  const [itemCode, setItemCode] = useState('');
-  const [requiredDate, setRequiredDate] = useState(new Date());
-  const [quantity, setQuantity] = useState('1.000000000');
-  const [uom, setUom] = useState('PCS');
-  const [warehouse, setWarehouse] = useState('');
-  const [email, setEmail] = useState('');
-  const [quotations, setQuotations] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
-  const [items, setItems] = useState([]);
-  const [seriesOptions, setSeriesOptions] = useState([]);
+  const [supplierList, setSupplierList] = useState([]);
+  const [itemList, setItemList] = useState([]);
   const [uomOptions, setUomOptions] = useState([]);
   const [warehouseOptions, setWarehouseOptions] = useState([]);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const navigation = useNavigation(); // Use navigation
 
   useEffect(() => {
-    if (employeeDetails) {
-      fetchQuotations();
-      fetchSuppliers();
-      fetchItems();
-      fetchSeriesOptions();
-      fetchUOMOptions();
-      fetchWarehouseOptions();
-    }
-  }, [employeeDetails]);
-
-  const fetchQuotations = async () => {
-    try {
-      const requests = await getQuotations(employeeDetails.name);
-      setQuotations(requests.sort((a, b) => new Date(b.date) - new Date(a.date)));
-    } catch (error) {
-      console.error('Error fetching quotations:', error);
-    }
-  };
+    fetchSuppliers();
+    fetchItems();
+    fetchUOMOptions();
+    fetchWarehouseOptions();
+  }, []);
 
   const fetchSuppliers = async () => {
     try {
-      const supplierList = await getSuppliers();
-      setSuppliers(supplierList);
+      const suppliers = await getSuppliers();
+      setSupplierList(suppliers);
     } catch (error) {
       console.error('Error fetching suppliers:', error);
     }
@@ -59,43 +62,82 @@ const RequestForQuotation = () => {
 
   const fetchItems = async () => {
     try {
-      const itemList = await getItems();
-      setItems(itemList);
+      const items = await getItemsList();
+      setItemList(items);
     } catch (error) {
       console.error('Error fetching items:', error);
     }
   };
 
-  const fetchSeriesOptions = async () => {
-    try {
-      const seriesList = await getSeriesOptions();
-      setSeriesOptions(seriesList);
-    } catch (error) {
-      console.error('Error fetching series options:', error);
-    }
-  };
-
   const fetchUOMOptions = async () => {
     try {
-      const uomList = await getUOMs();
-      setUomOptions(uomList);
+      const uoms = await getUOMs();
+      setUomOptions(uoms);
     } catch (error) {
-      console.error('Error fetching UOM options:', error);
+      console.error('Error fetching UOMs:', error);
     }
   };
 
   const fetchWarehouseOptions = async () => {
     try {
-      const warehouseList = await getWarehouses();
-      setWarehouseOptions(warehouseList);
+      const warehouses = await getWarehouses();
+      setWarehouseOptions(warehouses);
     } catch (error) {
-      console.error('Error fetching warehouse options:', error);
+      console.error('Error fetching warehouses:', error);
     }
   };
 
+  const handleAddSupplierRow = () => {
+    setSuppliers([...suppliers, {supplier: '', contact: '', email: ''}]);
+  };
+
+  const handleRemoveSupplierRow = index => {
+    const updatedSuppliers = suppliers.filter((_, i) => i !== index);
+    setSuppliers(updatedSuppliers);
+  };
+
+  const handleAddItemRow = () => {
+    setItems([
+      ...items,
+      {
+        itemCode: '',
+        quantity: '',
+        uom: '',
+        warehouse: '',
+        requiredDate: new Date(),
+        showDatePicker: false,
+      },
+    ]);
+  };
+
+  const handleRemoveItemRow = index => {
+    const updatedItems = items.filter((_, i) => i !== index);
+    setItems(updatedItems);
+  };
+
   const handleRequestQuotation = async () => {
-    if (!company || !supplier || !itemCode || !requiredDate || !quantity || !uom || !email) {
-      Alert.alert('Error', 'Please fill in all fields');
+    console.log('Items before submission:', items);
+
+    // Validation for suppliers
+    if (suppliers.some(s => !s.supplier || !s.email)) {
+      Alert.alert('Error', 'Please fill in all supplier fields');
+      return;
+    }
+
+    // Validation for items
+    if (
+      items.some(
+        item =>
+          !item.itemCode ||
+          !item.quantity ||
+          parseFloat(item.quantity) === 0 ||
+          !item.warehouse,
+      )
+    ) {
+      Alert.alert(
+        'Error',
+        'Please ensure all items have a valid item code, quantity, and warehouse',
+      );
       return;
     }
 
@@ -103,236 +145,281 @@ const RequestForQuotation = () => {
       const newQuotationRequest = {
         series,
         company,
-        supplier,
-        item_code: itemCode,
-        required_date: requiredDate.toISOString().split('T')[0],
-        quantity,
-        uom,
-        email,
-        warehouse,
-        status: 'Draft'
+        suppliers,
+        items: items.map(item => ({
+          item_code: item.itemCode,
+          qty: item.quantity,
+          uom: item.uom,
+          warehouse: item.warehouse,
+          conversion_factor: item.conversion_factor,  // Pass conversion factor
+          required_date: item.requiredDate.toISOString().split('T')[0],
+        })),
+        required_date: date.toISOString().split('T')[0],
+        status: 'Draft',
       };
+
+      console.log('Request Data:', newQuotationRequest);
+
       await requestQuotation(newQuotationRequest);
       Alert.alert('Success', 'Quotation request submitted');
-      setSeries('RFQ-DM-.YYYY.-');
-      setSupplier('');
-      setItemCode('');
-      setRequiredDate(new Date());
-      setQuantity('1.000000000');
-      setUom('PCS');
-      setEmail('');
-      setWarehouse('DM Warehouse');
-      fetchQuotations();
+      resetForm();
     } catch (error) {
       console.error('Error requesting quotation:', error);
       Alert.alert('Error', 'Failed to submit quotation request');
     }
   };
 
-  const toggleModal = () => {
-    setIsModalVisible(!isModalVisible);
+  const resetForm = () => {
+    setSeries('RFQ-DM-.YYYY.-');
+    setSuppliers([{supplier: '', contact: '', email: ''}]);
+    setItems([
+      {
+        itemCode: '',
+        quantity: '',
+        uom: '',
+        warehouse: '',
+        requiredDate: new Date(),
+        showDatePicker: false,
+      },
+    ]);
+    setDate(new Date());
+  };
+
+  const handleDateChange = (index, event, selectedDate) => {
+    const currentDate = selectedDate || items[index].requiredDate;
+    const updatedItems = [...items];
+    updatedItems[index].requiredDate = currentDate;
+    updatedItems[index].showDatePicker = false; // Close the date picker after selection
+    setItems(updatedItems);
+  };
+
+  const openDatePicker = index => {
+    const updatedItems = [...items];
+    updatedItems[index].showDatePicker = true; // Open the date picker for specific item
+    setItems(updatedItems);
   };
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <Text style={styles.title}>Request for Quotation</Text>
-        <View style={styles.labelContainer}>
-          <Text style={styles.label}>Series</Text>
-        </View>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={series}
-            onValueChange={(itemValue) => setSeries(itemValue)}
-            style={styles.picker}
-          >
-            <Picker.Item label="Select Series" value="" />
-            <Picker.Item label="RFQ-DM-.YYYY.-" value="RFQ-DM-.YYYY.-" />
-            <Picker.Item label="RFQ-QM-.YYYY.-" value="RFQ-QM-.YYYY.-" />
-            <Picker.Item label="RFQ-NS-.YYYY.-" value="RFQ-NS-.YYYY.-" />
-          </Picker>
-        </View>
-        <View style={styles.labelContainer}>
-          <Text style={styles.label}>Company</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="Company"
-          placeholderTextColor="#153156"
-          value={company}
-          editable={false}
-        />
-        <View style={styles.labelContainer}>
-          <Text style={styles.label}>Required Date</Text>
-        </View>
-        <TouchableOpacity onPress={() => setShowDatePicker(true)}>
-          <Text style={styles.input}>{`Required Date: ${requiredDate.toDateString()}`}</Text>
-        </TouchableOpacity>
-        {showDatePicker && (
-          <DateTimePicker
-            value={requiredDate}
-            mode="date"
-            display="default"
-            onChange={(event, selectedDate) => {
-              setShowDatePicker(false);
-              if (selectedDate) {
-                setRequiredDate(selectedDate);
-              }
-            }}
-          />
-        )}
-        <View style={styles.labelContainer}>
-          <Text style={styles.label}>Supplier</Text>
-        </View>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={supplier}
-            onValueChange={(itemValue) => setSupplier(itemValue)}
-            style={styles.picker}
-          >
-            <Picker.Item label="Select Supplier" value="" />
-            {suppliers.map((sup, index) => (
-              <Picker.Item key={index} label={sup.supplier_name} value={sup.name} />
-            ))}
-          </Picker>
-        </View>
-        <View style={styles.labelContainer}>
-          <Text style={styles.label}>Contact</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="Contact"
-          placeholderTextColor="#153156"
-          value={supplier}
-          onChangeText={setSupplier}
-        />
-        <View style={styles.labelContainer}>
-          <Text style={styles.label}>Email</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor="#153156"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <View style={styles.labelContainer}>
-          <Text style={styles.label}>Item Code</Text>
-        </View>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={itemCode}
-            onValueChange={(itemValue) => setItemCode(itemValue)}
-            style={styles.picker}
-          >
-            <Picker.Item label="Select Item Code" value="" />
-            {items.map((item, index) => (
-              <Picker.Item key={index} label={`${item.item_code} - ${item.description}`} value={item.item_code} />
-            ))}
-          </Picker>
-        </View>
-        <View style={styles.labelContainer}>
-          <Text style={styles.label}>Quantity</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="Quantity"
-          placeholderTextColor="#153156"
-          value={quantity}
-          onChangeText={setQuantity}
-        />
-        <View style={styles.labelContainer}>
-          <Text style={styles.label}>UOM</Text>
-        </View>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={uom}
-            onValueChange={(itemValue) => setUom(itemValue)}
-            style={styles.picker}
-          >
-            <Picker.Item label="PCS" value="PCS" />
-            {uomOptions.map((uom, index) => (
-              <Picker.Item key={index} label={uom.uom_name} value={uom.uom_name} />
-            ))}
-          </Picker>
-        </View>
-        <View style={styles.labelContainer}>
-          <Text style={styles.label}>Warehouse</Text>
-        </View>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={warehouse}
-            onValueChange={(itemValue) => setWarehouse(itemValue)}
-            style={styles.picker}
-          >
-            <Picker.Item label="Select Warehouse" value="" />
-            {warehouseOptions.map((warehouse, index) => (
-              <Picker.Item key={index} label={warehouse.warehouse_name} value={warehouse.name} />
-            ))}
-          </Picker>
-        </View>
-        <TouchableOpacity style={styles.button} onPress={handleRequestQuotation}>
-          <Text style={styles.buttonText}>Request Quotation</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={toggleModal}>
-          <Text style={styles.buttonText}>View Quotation Requests</Text>
-        </TouchableOpacity>
-      </ScrollView>
-      <Modal isVisible={isModalVisible} onBackdropPress={toggleModal}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Quotation Requests</Text>
-          <ScrollView style={styles.scrollView}>
-            {quotations.map((item, index) => (
-              <View key={index} style={styles.requestItem}>
-                <Text style={styles.requestText}>{item.item_code} - {item.quantity} {item.uom}</Text>
-                <Text style={styles.requestStatus}>{item.status}</Text>
-              </View>
-            ))}
-          </ScrollView>
-          <TouchableOpacity style={[styles.button, styles.modalButton]} onPress={toggleModal}>
-            <Text style={styles.buttonText}>Close</Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
-      <View style={styles.navbar}>
+    <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <View style={styles.container}>
+        <Text style={styles.title}>Purchase RFQ</Text>
+
+        <Text style={styles.label}>Series</Text>
+        <TextInput style={styles.input} value={series} editable={false} />
+
+        <Text style={styles.label}>Company</Text>
+        <TextInput style={styles.input} value={company} editable={false} />
+
+        <Text style={styles.label}>Required Date</Text>
         <TouchableOpacity
-          style={styles.navbarButton}
-          onPress={() => navigation.navigate('AttendanceManagement')}
-        >
-          <Text style={styles.navbarButtonText}>Attendance</Text>
+          style={styles.input}
+          onPress={() => setDate(new Date())}>
+          <Text style={styles.dateText}>{date.toDateString()}</Text>
         </TouchableOpacity>
+
+        {suppliers.map((supplier, index) => (
+          <View key={index} style={styles.itemRowbg}>
+            <Text style={styles.label}>Supplier</Text>
+            <Dropdown
+              style={styles.dropdown}
+              placeholderStyle={styles.placeholderStyle}
+              selectedTextStyle={styles.selectedTextStyle}
+              inputSearchStyle={styles.inputSearchStyle}
+              iconStyle={styles.iconStyle}
+              data={supplierList.map(s => ({
+                label: s.supplier_name,
+                value: s.name,
+              }))}
+              search
+              searchPlaceholder="Search..."
+              maxHeight={300}
+              labelField="label"
+              valueField="value"
+              placeholder="Select Supplier"
+              value={supplier.supplier}
+              onChange={item => {
+                const updatedSuppliers = [...suppliers];
+                updatedSuppliers[index].supplier = item.value;
+                setSuppliers(updatedSuppliers);
+              }}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Contact"
+              value={supplier.contact}
+              onChangeText={text => {
+                const updatedSuppliers = [...suppliers];
+                updatedSuppliers[index].contact = text;
+                setSuppliers(updatedSuppliers);
+              }}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              value={supplier.email}
+              onChangeText={text => {
+                const updatedSuppliers = [...suppliers];
+                updatedSuppliers[index].email = text;
+                setSuppliers(updatedSuppliers);
+              }}
+            />
+            {index > 0 && (
+              <TouchableOpacity
+                style={styles.removeButton}
+                onPress={() => handleRemoveSupplierRow(index)}>
+                <Text style={styles.buttonText}>Remove</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ))}
+
         <TouchableOpacity
-          style={styles.navbarButton}
-          onPress={() => navigation.navigate('LeaveManagement')}
-        >
-          <Text style={styles.navbarButtonText}>Leave</Text>
+          style={styles.addButton}
+          onPress={handleAddSupplierRow}>
+          <Text style={styles.buttonText}>Add Supplier</Text>
         </TouchableOpacity>
+
+        {items.map((item, index) => (
+          <View key={index} style={styles.itemRowbg}>
+            <Text style={styles.label}>Item</Text>
+            <Dropdown
+              style={styles.dropdown}
+              placeholderStyle={styles.placeholderStyle}
+              selectedTextStyle={styles.selectedTextStyle}
+              inputSearchStyle={styles.inputSearchStyle}
+              iconStyle={styles.iconStyle}
+              data={itemList.map(i => ({
+                label: i.item_name,
+                value: i.item_code,
+              }))}
+              search
+              searchPlaceholder="Search..."
+              maxHeight={300}
+              labelField="label"
+              valueField="value"
+              placeholder="Select Item"
+              value={item.itemCode}
+              onChange={selectedItem => {
+                const updatedItems = [...items];
+                updatedItems[index].itemCode = selectedItem.value;
+                setItems(updatedItems);
+              }}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Quantity"
+              value={item.quantity}
+              onChangeText={text => {
+                const updatedItems = [...items];
+                updatedItems[index].quantity = text;
+                setItems(updatedItems);
+              }}
+              keyboardType="numeric"
+            />
+            <Dropdown
+              style={styles.dropdown}
+              placeholderStyle={styles.placeholderStyle}
+              selectedTextStyle={styles.selectedTextStyle}
+              inputSearchStyle={styles.inputSearchStyle}
+              iconStyle={styles.iconStyle}
+              data={uomOptions.map(u => ({
+                label: u.uom_name,
+                value: u.uom_name,
+              }))}
+              search
+              searchPlaceholder="Search..."
+              maxHeight={300}
+              labelField="label"
+              valueField="value"
+              placeholder="Select UOM"
+              value={item.uom}
+              onChange={selectedUom => {
+                const updatedItems = [...items];
+                updatedItems[index].uom = selectedUom.value;
+                setItems(updatedItems);
+              }}
+            />
+            <Dropdown
+              style={styles.dropdown}
+              data={warehouseOptions.map(w => ({
+                label: w.warehouse_name,
+                value: w.name,
+              }))}
+              labelField="label"
+              valueField="value"
+              placeholder="Select Warehouse"
+              value={item.warehouse}
+              onChange={selectedWarehouse => {
+                const updatedItems = [...items];
+                updatedItems[index].warehouse =
+                  selectedWarehouse.value || 'Default Warehouse'; // Ensure warehouse is not undefined
+                console.log('Updated Item:', updatedItems[index]);
+                setItems(updatedItems);
+              }}
+            />
+
+            <TouchableOpacity
+              style={styles.input}
+              onPress={() => openDatePicker(index)}>
+              <Text>{item.requiredDate.toDateString()}</Text>
+            </TouchableOpacity>
+
+            {item.showDatePicker && (
+              <DateTimePicker
+                value={item.requiredDate}
+                mode="date"
+                display="default"
+                onChange={(event, selectedDate) =>
+                  handleDateChange(index, event, selectedDate)
+                }
+              />
+            )}
+
+            {index > 0 && (
+              <TouchableOpacity
+                style={styles.removeButton}
+                onPress={() => handleRemoveItemRow(index)}>
+                <Text style={styles.buttonText}>Remove</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ))}
+
+        <TouchableOpacity style={styles.addButton} onPress={handleAddItemRow}>
+          <Text style={styles.buttonText}>Add Item</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
-          style={styles.navbarButton}
-          onPress={() => navigation.navigate('RequestForQuotation')}
-        >
-          <Text style={styles.navbarButtonText}>Quotation</Text>
+          style={styles.submitButton}
+          onPress={handleRequestQuotation}>
+          <Text style={styles.buttonText}>Submit Quotation</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
     paddingTop: 40,
+    backgroundColor: '#FFFFFF',
   },
   scrollContainer: {
-    alignItems: 'center',
+    flexGrow: 1,
   },
   title: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#153156',
     marginBottom: 20,
+    textAlign: 'center',
+  },
+  label: {
+    fontSize: 16,
+    color: '#153156',
+    marginBottom: 10,
   },
   input: {
     width: '100%',
@@ -343,99 +430,71 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 20,
     fontSize: 16,
+    color: '#153156',
     justifyContent: 'center',
+  },
+  dateText: {
+    fontSize: 16,
     color: '#153156',
   },
-  pickerContainer: {
-    width: '100%',
-    height: 50,
-    borderColor: '#153156',
-    borderWidth: 1,
-    borderRadius: 30,
-    marginBottom: 20,
-    overflow: 'hidden',
-  },
-  picker: {
-    width: '100%',
-    height: '100%',
-  },
-  button: {
+  addButton: {
     backgroundColor: '#153156',
     paddingVertical: 15,
     borderRadius: 30,
     width: '100%',
     alignItems: 'center',
     marginBottom: 20,
-    elevation: 2,
+  },
+  removeButton: {
+    backgroundColor: '#E53935',
+    paddingVertical: 15,
+    borderRadius: 30,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  submitButton: {
+    backgroundColor: '#153156',
+    paddingVertical: 15,
+    borderRadius: 30,
+    width: '100%',
+    alignItems: 'center',
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  modalContent: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#153156',
-    marginBottom: 20,
-  },
-  scrollView: {
-    width: '100%',
-    maxHeight: 300,
-  },
-  requestItem: {
-    width: '100%',
-    padding: 15,
+  dropdown: {
+    height: 50,
     borderColor: '#153156',
     borderWidth: 1,
-    borderRadius: 10,
-    marginBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    borderRadius: 30,
+    paddingHorizontal: 20,
+    marginBottom: 20,
   },
-  requestText: {
+  placeholderStyle: {
     fontSize: 16,
-    color: '#000',
+    color: '#B0B0B0',
   },
-  requestStatus: {
+  selectedTextStyle: {
     fontSize: 16,
     color: '#153156',
   },
-  modalButton: {
-    marginTop: 10,
-    width: '50%',
-  },
-  navbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: '#153156',
-    paddingVertical: 10,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-  },
-  navbarButton: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  navbarButtonText: {
-    color: '#fff',
+  inputSearchStyle: {
+    height: 40,
     fontSize: 16,
   },
-  labelContainer: {
+  iconStyle: {
+    width: 20,
+    height: 20,
+  },
+  itemRowbg: {
     width: '100%',
-    alignItems: 'flex-start',
-    marginBottom: 5,
-  },
-  label: {
-    fontSize: 16,
-    color: '#153156',
-    fontWeight: 'bold',
+    marginBottom: 20,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#f0f0f0',
   },
 });
 

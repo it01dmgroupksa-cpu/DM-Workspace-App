@@ -1,20 +1,25 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import axios from 'axios';
+import moment from 'moment';
+import React, {useContext, useEffect, useState} from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ScrollView,
+} from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
-import { checkIn, checkOut } from '../../api';
-import { EmployeeContext } from '../context/EmployeeContext';
-import { RNCamera } from 'react-native-camera';
-import { useNavigation } from '@react-navigation/native'; // Import navigation
-
-// Target location (latitude, longitude)
-const TARGET_LOCATION = { latitude: 24.650955513469743, longitude: 46.764160157738324 };
+import {checkIn, checkOut, getBranchLocations} from '../../api';
+import {EmployeeContext} from '../context/EmployeeContext';
+import {RNCamera} from 'react-native-camera';
+import {useNavigation} from '@react-navigation/native';
 
 const AttendanceManagement = () => {
-  const { employeeDetails } = useContext(EmployeeContext);
+  const {employeeDetails} = useContext(EmployeeContext);
   const [location, setLocation] = useState(null);
-  const [isWithinRadius, setIsWithinRadius] = useState(false);
-  const [distance, setDistance] = useState(null);
-  const navigation = useNavigation(); // Use navigation
+  const [branchLocations, setBranchLocations] = useState([]);
+  const navigation = useNavigation();
 
   useEffect(() => {
     if (!employeeDetails) {
@@ -27,33 +32,33 @@ const AttendanceManagement = () => {
   useEffect(() => {
     const intervalId = setInterval(() => {
       getLocation();
-    }, 5000); // Check location every 5 seconds
+    }, 5000);
 
     return () => clearInterval(intervalId);
   }, []);
 
-  const getLocation = () => {
-    Geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        setLocation({ latitude, longitude });
-        const distanceToTarget = checkProximity(latitude, longitude);
-        setDistance(distanceToTarget);
-      },
-      (error) => console.error(error),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
-    );
+  useEffect(() => {
+    fetchBranchLocations();
+  }, []);
+
+  const fetchBranchLocations = async () => {
+    try {
+      const locations = await getBranchLocations();
+      setBranchLocations(locations);
+    } catch (error) {
+      console.error('Failed to fetch branch locations:', error);
+    }
   };
 
-  const checkProximity = (latitude, longitude) => {
-    const distance = getDistanceFromLatLonInKm(
-      latitude,
-      longitude,
-      TARGET_LOCATION.latitude,
-      TARGET_LOCATION.longitude
+  const getLocation = () => {
+    Geolocation.getCurrentPosition(
+      position => {
+        const {latitude, longitude} = position.coords;
+        setLocation({latitude, longitude});
+      },
+      error => console.error(error),
+      {enableHighAccuracy: true, timeout: 20000, maximumAge: 1000},
     );
-    setIsWithinRadius(distance <= 0.2); // 0.2 km is 200 meters
-    return distance;
   };
 
   const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
@@ -62,34 +67,119 @@ const AttendanceManagement = () => {
     const dLon = deg2rad(lon2 - lon1);
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      Math.cos(deg2rad(lat1)) *
+        Math.cos(deg2rad(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c; // Distance in km
     return distance;
   };
 
-  const deg2rad = (deg) => {
+  const deg2rad = deg => {
     return deg * (Math.PI / 180);
   };
 
+  const canCheckInOrOut = actionType => {
+    if (!location) {
+      console.log('Location is not available.');
+      return false;
+    }
+
+    const outsideCheck =
+      actionType === 'checkIn'
+        ? employeeDetails.custom_outside_check_in
+        : employeeDetails.custom_outside_check_out;
+
+    if (outsideCheck) {
+      console.log(
+        `${
+          actionType === 'checkIn' ? 'Check-in' : 'Check-out'
+        } from anywhere is allowed.`,
+      );
+      return true;
+    }
+
+    if (
+      !employeeDetails.branch ||
+      employeeDetails.custom_all_location_attendance
+    ) {
+      console.log(
+        'Branch is null or all branches attendance is enabled, allowed to check in/out from any branch location.',
+      );
+      const isWithinAnyBranchRadius = branchLocations.some(branch => {
+        const distanceToBranch = getDistanceFromLatLonInKm(
+          location.latitude,
+          location.longitude,
+          branch.custom_latitude,
+          branch.custom_longitude,
+        );
+        return distanceToBranch <= 0.05;
+      });
+      console.log(`Within any branch radius: ${isWithinAnyBranchRadius}`);
+      return isWithinAnyBranchRadius;
+    }
+
+    const branchLocation = branchLocations.find(
+      loc => loc.branch === employeeDetails.branch,
+    );
+    if (!branchLocation) {
+      console.log('No matching branch location found.');
+      return false;
+    }
+
+    const distanceToBranch = getDistanceFromLatLonInKm(
+      location.latitude,
+      location.longitude,
+      branchLocation.custom_latitude,
+      branchLocation.custom_longitude,
+    );
+
+    console.log(`Distance to branch: ${distanceToBranch} km`);
+    return distanceToBranch <= 0.05;
+  };
+
   const handleCheckIn = async () => {
+    console.log('Attempting to check in...');
+    if (!canCheckInOrOut('checkIn')) {
+      Alert.alert(
+        'Check-in Failed',
+        'You are not within the allowed location radius.',
+      );
+      return;
+    }
     try {
-      const result = await checkIn(employeeDetails.name, location);
+      const deviceID = employeeDetails.custom_job_location || 'Mobile Device';
+      const result = await checkIn(employeeDetails.name, location, deviceID);
       Alert.alert('Check-in Successful', 'Attendance recorded successfully.');
     } catch (error) {
-      console.error('Check-in Error:', error.response.data);
-      Alert.alert('Check-in Failed', `Error: ${error.response.data.message || error.message}`);
+      console.error('Check-in Error:', error.response?.data || error.message);
+      Alert.alert(
+        'Check-in Failed',
+        `Error: ${error.response?.data?.message || error.message}`,
+      );
     }
   };
 
   const handleCheckOut = async () => {
+    console.log('Attempting to check out...');
+    if (!canCheckInOrOut('checkOut')) {
+      Alert.alert(
+        'Check-out Failed',
+        'You are not within the allowed location radius.',
+      );
+      return;
+    }
     try {
-      const result = await checkOut(employeeDetails.name, location);
+      const deviceID = employeeDetails.custom_job_location || 'Mobile Device';
+      const result = await checkOut(employeeDetails.name, location, deviceID);
       Alert.alert('Check-out Successful', 'Attendance recorded successfully.');
     } catch (error) {
-      console.error('Check-out Error:', error.response.data);
-      Alert.alert('Check-out Failed', `Error: ${error.response.data.message || error.message}`);
+      console.error('Check-out Error:', error.response?.data || error.message);
+      Alert.alert(
+        'Check-out Failed',
+        `Error: ${error.response?.data?.message || error.message}`,
+      );
     }
   };
 
@@ -116,46 +206,29 @@ const AttendanceManagement = () => {
             </View>
           </View>
         </View>
-        <View style={styles.locationInfo}>
+        {/* <View style={styles.locationInfo}>
           <Text style={styles.locationText}>Current Latitude: {location?.latitude}</Text>
           <Text style={styles.locationText}>Current Longitude: {location?.longitude}</Text>
-          <Text style={styles.locationText}>Distance to Target: {distance?.toFixed(2)} km</Text>
-        </View>
+        </View> */}
         <TouchableOpacity
-          style={[styles.button, !isWithinRadius && styles.disabledButton]}
+          style={[
+            styles.button,
+            !canCheckInOrOut('checkIn') && styles.disabledButton,
+          ]}
           onPress={handleCheckIn}
-          disabled={!isWithinRadius}
-        >
+          disabled={!canCheckInOrOut('checkIn')}>
           <Text style={styles.buttonText}>Check In</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.button, !isWithinRadius && styles.disabledButton]}
+          style={[
+            styles.button,
+            !canCheckInOrOut('checkOut') && styles.disabledButton,
+          ]}
           onPress={handleCheckOut}
-          disabled={!isWithinRadius}
-        >
+          disabled={!canCheckInOrOut('checkOut')}>
           <Text style={styles.buttonText}>Check Out</Text>
         </TouchableOpacity>
       </ScrollView>
-      <View style={styles.navbar}>
-        <TouchableOpacity
-          style={styles.navbarButton}
-          onPress={() => navigation.navigate('AttendanceManagement')}
-        >
-          <Text style={styles.navbarButtonText}>Attendance</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navbarButton}
-          onPress={() => navigation.navigate('LeaveManagement')}
-        >
-          <Text style={styles.navbarButtonText}>Leave</Text>
-        </TouchableOpacity>
-        {/* <TouchableOpacity
-          style={styles.navbarButton}
-          onPress={() => navigation.navigate('RequestForQuotation')}
-        >
-          <Text style={styles.navbarButtonText}>Quotation</Text>
-        </TouchableOpacity> */}
-      </View>
     </View>
   );
 };
@@ -230,7 +303,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   disabledButton: {
-    backgroundColor: '#A9A9A9', // Disabled button color
+    backgroundColor: '#A9A9A9',
   },
   buttonText: {
     color: '#fff',

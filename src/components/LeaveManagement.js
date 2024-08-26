@@ -203,20 +203,6 @@ const LeaveManagement = () => {
           </TouchableOpacity>
         </View>
       </Modal>
-      <View style={styles.navbar}>
-        <TouchableOpacity
-          style={styles.navbarButton}
-          onPress={() => navigation.navigate('AttendanceManagement')}
-        >
-          <Text style={styles.navbarButtonText}>Attendance</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.navbarButton}
-          onPress={() => navigation.navigate('LeaveManagement')}
-        >
-          <Text style={styles.navbarButtonText}>Leave</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 };
