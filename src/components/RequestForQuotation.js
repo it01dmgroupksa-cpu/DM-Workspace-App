@@ -1,4 +1,4 @@
-import React, {useState, useContext, useEffect} from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,9 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import {Dropdown} from 'react-native-element-dropdown';
+import { Dropdown } from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import {EmployeeContext} from '../context/EmployeeContext';
+import { EmployeeContext } from '../context/EmployeeContext';
 import {
   getSuppliers,
   getItemsList,
@@ -20,22 +20,21 @@ import {
 } from '../../api';
 
 const RequestForQuotation = () => {
-  const {employeeDetails} = useContext(EmployeeContext);
-  const [suppliers, setSuppliers] = useState([
-    {supplier: '', contact: '', email: ''},
-  ]);
+  const { employeeDetails } = useContext(EmployeeContext);
+  const [suppliers, setSuppliers] = useState([{ supplier: '', contact: '', email: '' }]);
   const [items, setItems] = useState([
     {
       itemCode: '',
-      quantity: '0.000000000',
+      quantity: '',
       uom: '',
       warehouse: '',
       requiredDate: new Date(),
       showDatePicker: false,
-      conversion_factor: 1,  // Default conversion factor is 1
+      conversion_factor: 1,  // Default conversion factor is set to 1
+      description: '',
     },
   ]);
-  
+
   const [date, setDate] = useState(new Date());
   const [series, setSeries] = useState('RFQ-DM-.YYYY.-');
   const [company, setCompany] = useState('Durar Masagh Trading Company');
@@ -88,10 +87,10 @@ const RequestForQuotation = () => {
   };
 
   const handleAddSupplierRow = () => {
-    setSuppliers([...suppliers, {supplier: '', contact: '', email: ''}]);
+    setSuppliers([...suppliers, { supplier: '', contact: '', email: '' }]);
   };
 
-  const handleRemoveSupplierRow = index => {
+  const handleRemoveSupplierRow = (index) => {
     const updatedSuppliers = suppliers.filter((_, i) => i !== index);
     setSuppliers(updatedSuppliers);
   };
@@ -106,11 +105,12 @@ const RequestForQuotation = () => {
         warehouse: '',
         requiredDate: new Date(),
         showDatePicker: false,
+        conversion_factor: 1,  // Always initialize with a default conversion factor
       },
     ]);
   };
 
-  const handleRemoveItemRow = index => {
+  const handleRemoveItemRow = (index) => {
     const updatedItems = items.filter((_, i) => i !== index);
     setItems(updatedItems);
   };
@@ -118,25 +118,23 @@ const RequestForQuotation = () => {
   const handleRequestQuotation = async () => {
     console.log('Items before submission:', items);
 
-    // Validation for suppliers
-    if (suppliers.some(s => !s.supplier || !s.email)) {
+    if (suppliers.some((s) => !s.supplier || !s.email)) {
       Alert.alert('Error', 'Please fill in all supplier fields');
       return;
     }
 
-    // Validation for items
     if (
       items.some(
-        item =>
+        (item) =>
           !item.itemCode ||
           !item.quantity ||
           parseFloat(item.quantity) === 0 ||
-          !item.warehouse,
+          !item.warehouse
       )
     ) {
       Alert.alert(
         'Error',
-        'Please ensure all items have a valid item code, quantity, and warehouse',
+        'Please ensure all items have a valid item code, quantity, and warehouse'
       );
       return;
     }
@@ -146,16 +144,18 @@ const RequestForQuotation = () => {
         series,
         company,
         suppliers,
-        items: items.map(item => ({
+        items: items.map((item) => ({
           item_code: item.itemCode,
           qty: item.quantity,
           uom: item.uom,
           warehouse: item.warehouse,
-          conversion_factor: item.conversion_factor,  // Pass conversion factor
+          conversion_factor: item.conversion_factor || 1,  // Ensure conversion factor is always set
           required_date: item.requiredDate.toISOString().split('T')[0],
+          description: 'N/A',
         })),
         required_date: date.toISOString().split('T')[0],
         status: 'Draft',
+        message_for_supplier: 'N/A',
       };
 
       console.log('Request Data:', newQuotationRequest);
@@ -171,7 +171,7 @@ const RequestForQuotation = () => {
 
   const resetForm = () => {
     setSeries('RFQ-DM-.YYYY.-');
-    setSuppliers([{supplier: '', contact: '', email: ''}]);
+    setSuppliers([{ supplier: '', contact: '', email: '' }]);
     setItems([
       {
         itemCode: '',
@@ -180,6 +180,7 @@ const RequestForQuotation = () => {
         warehouse: '',
         requiredDate: new Date(),
         showDatePicker: false,
+        conversion_factor: 1,  // Reset conversion factor
       },
     ]);
     setDate(new Date());
@@ -189,13 +190,13 @@ const RequestForQuotation = () => {
     const currentDate = selectedDate || items[index].requiredDate;
     const updatedItems = [...items];
     updatedItems[index].requiredDate = currentDate;
-    updatedItems[index].showDatePicker = false; // Close the date picker after selection
+    updatedItems[index].showDatePicker = false;
     setItems(updatedItems);
   };
 
-  const openDatePicker = index => {
+  const openDatePicker = (index) => {
     const updatedItems = [...items];
-    updatedItems[index].showDatePicker = true; // Open the date picker for specific item
+    updatedItems[index].showDatePicker = true;
     setItems(updatedItems);
   };
 
@@ -211,9 +212,7 @@ const RequestForQuotation = () => {
         <TextInput style={styles.input} value={company} editable={false} />
 
         <Text style={styles.label}>Required Date</Text>
-        <TouchableOpacity
-          style={styles.input}
-          onPress={() => setDate(new Date())}>
+        <TouchableOpacity style={styles.input} onPress={() => setDate(new Date())}>
           <Text style={styles.dateText}>{date.toDateString()}</Text>
         </TouchableOpacity>
 
@@ -226,7 +225,7 @@ const RequestForQuotation = () => {
               selectedTextStyle={styles.selectedTextStyle}
               inputSearchStyle={styles.inputSearchStyle}
               iconStyle={styles.iconStyle}
-              data={supplierList.map(s => ({
+              data={supplierList.map((s) => ({
                 label: s.supplier_name,
                 value: s.name,
               }))}
@@ -237,7 +236,7 @@ const RequestForQuotation = () => {
               valueField="value"
               placeholder="Select Supplier"
               value={supplier.supplier}
-              onChange={item => {
+              onChange={(item) => {
                 const updatedSuppliers = [...suppliers];
                 updatedSuppliers[index].supplier = item.value;
                 setSuppliers(updatedSuppliers);
@@ -247,7 +246,7 @@ const RequestForQuotation = () => {
               style={styles.input}
               placeholder="Contact"
               value={supplier.contact}
-              onChangeText={text => {
+              onChangeText={(text) => {
                 const updatedSuppliers = [...suppliers];
                 updatedSuppliers[index].contact = text;
                 setSuppliers(updatedSuppliers);
@@ -257,7 +256,7 @@ const RequestForQuotation = () => {
               style={styles.input}
               placeholder="Email"
               value={supplier.email}
-              onChangeText={text => {
+              onChangeText={(text) => {
                 const updatedSuppliers = [...suppliers];
                 updatedSuppliers[index].email = text;
                 setSuppliers(updatedSuppliers);
@@ -266,16 +265,15 @@ const RequestForQuotation = () => {
             {index > 0 && (
               <TouchableOpacity
                 style={styles.removeButton}
-                onPress={() => handleRemoveSupplierRow(index)}>
+                onPress={() => handleRemoveSupplierRow(index)}
+              >
                 <Text style={styles.buttonText}>Remove</Text>
               </TouchableOpacity>
             )}
           </View>
         ))}
 
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={handleAddSupplierRow}>
+        <TouchableOpacity style={styles.addButton} onPress={handleAddSupplierRow}>
           <Text style={styles.buttonText}>Add Supplier</Text>
         </TouchableOpacity>
 
@@ -288,7 +286,7 @@ const RequestForQuotation = () => {
               selectedTextStyle={styles.selectedTextStyle}
               inputSearchStyle={styles.inputSearchStyle}
               iconStyle={styles.iconStyle}
-              data={itemList.map(i => ({
+              data={itemList.map((i) => ({
                 label: i.item_name,
                 value: i.item_code,
               }))}
@@ -299,7 +297,7 @@ const RequestForQuotation = () => {
               valueField="value"
               placeholder="Select Item"
               value={item.itemCode}
-              onChange={selectedItem => {
+              onChange={(selectedItem) => {
                 const updatedItems = [...items];
                 updatedItems[index].itemCode = selectedItem.value;
                 setItems(updatedItems);
@@ -309,7 +307,7 @@ const RequestForQuotation = () => {
               style={styles.input}
               placeholder="Quantity"
               value={item.quantity}
-              onChangeText={text => {
+              onChangeText={(text) => {
                 const updatedItems = [...items];
                 updatedItems[index].quantity = text;
                 setItems(updatedItems);
@@ -322,7 +320,7 @@ const RequestForQuotation = () => {
               selectedTextStyle={styles.selectedTextStyle}
               inputSearchStyle={styles.inputSearchStyle}
               iconStyle={styles.iconStyle}
-              data={uomOptions.map(u => ({
+              data={uomOptions.map((u) => ({
                 label: u.uom_name,
                 value: u.uom_name,
               }))}
@@ -333,7 +331,7 @@ const RequestForQuotation = () => {
               valueField="value"
               placeholder="Select UOM"
               value={item.uom}
-              onChange={selectedUom => {
+              onChange={(selectedUom) => {
                 const updatedItems = [...items];
                 updatedItems[index].uom = selectedUom.value;
                 setItems(updatedItems);
@@ -341,7 +339,7 @@ const RequestForQuotation = () => {
             />
             <Dropdown
               style={styles.dropdown}
-              data={warehouseOptions.map(w => ({
+              data={warehouseOptions.map((w) => ({
                 label: w.warehouse_name,
                 value: w.name,
               }))}
@@ -349,18 +347,14 @@ const RequestForQuotation = () => {
               valueField="value"
               placeholder="Select Warehouse"
               value={item.warehouse}
-              onChange={selectedWarehouse => {
+              onChange={(selectedWarehouse) => {
                 const updatedItems = [...items];
-                updatedItems[index].warehouse =
-                  selectedWarehouse.value || 'Default Warehouse'; // Ensure warehouse is not undefined
-                console.log('Updated Item:', updatedItems[index]);
+                updatedItems[index].warehouse = selectedWarehouse.value;
                 setItems(updatedItems);
               }}
             />
 
-            <TouchableOpacity
-              style={styles.input}
-              onPress={() => openDatePicker(index)}>
+            <TouchableOpacity style={styles.input} onPress={() => openDatePicker(index)}>
               <Text>{item.requiredDate.toDateString()}</Text>
             </TouchableOpacity>
 
@@ -369,16 +363,15 @@ const RequestForQuotation = () => {
                 value={item.requiredDate}
                 mode="date"
                 display="default"
-                onChange={(event, selectedDate) =>
-                  handleDateChange(index, event, selectedDate)
-                }
+                onChange={(event, selectedDate) => handleDateChange(index, event, selectedDate)}
               />
             )}
 
             {index > 0 && (
               <TouchableOpacity
                 style={styles.removeButton}
-                onPress={() => handleRemoveItemRow(index)}>
+                onPress={() => handleRemoveItemRow(index)}
+              >
                 <Text style={styles.buttonText}>Remove</Text>
               </TouchableOpacity>
             )}
@@ -389,9 +382,7 @@ const RequestForQuotation = () => {
           <Text style={styles.buttonText}>Add Item</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.submitButton}
-          onPress={handleRequestQuotation}>
+        <TouchableOpacity style={styles.submitButton} onPress={handleRequestQuotation}>
           <Text style={styles.buttonText}>Submit Quotation</Text>
         </TouchableOpacity>
       </View>
@@ -404,16 +395,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 40,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F5F7FA',
   },
   scrollContainer: {
     flexGrow: 1,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#153156',
-    marginBottom: 20,
+    marginBottom: 30,
     textAlign: 'center',
   },
   label: {
@@ -426,12 +417,13 @@ const styles = StyleSheet.create({
     height: 50,
     borderColor: '#153156',
     borderWidth: 1,
-    borderRadius: 30,
-    paddingHorizontal: 20,
+    borderRadius: 12,
+    paddingHorizontal: 16,
     marginBottom: 20,
     fontSize: 16,
     color: '#153156',
     justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
   dateText: {
     fontSize: 16,
@@ -439,29 +431,39 @@ const styles = StyleSheet.create({
   },
   addButton: {
     backgroundColor: '#153156',
-    paddingVertical: 15,
-    borderRadius: 30,
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   removeButton: {
-    backgroundColor: '#E53935',
-    paddingVertical: 15,
-    borderRadius: 30,
+    backgroundColor: '#FF4757',
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   submitButton: {
     backgroundColor: '#153156',
-    paddingVertical: 15,
-    borderRadius: 30,
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
   },
   buttonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -469,9 +471,10 @@ const styles = StyleSheet.create({
     height: 50,
     borderColor: '#153156',
     borderWidth: 1,
-    borderRadius: 30,
-    paddingHorizontal: 20,
+    borderRadius: 12,
+    paddingHorizontal: 16,
     marginBottom: 20,
+    backgroundColor: '#FFFFFF',
   },
   placeholderStyle: {
     fontSize: 16,
@@ -492,9 +495,14 @@ const styles = StyleSheet.create({
   itemRowbg: {
     width: '100%',
     marginBottom: 20,
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: '#f0f0f0',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F7F9FC',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
 });
 

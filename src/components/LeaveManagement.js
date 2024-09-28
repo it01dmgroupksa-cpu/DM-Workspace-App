@@ -1,12 +1,13 @@
 import React, { useState, useContext, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, ScrollView, SafeAreaView } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Modal from 'react-native-modal';
 import { Picker } from '@react-native-picker/picker';
 import { EmployeeContext } from '../context/EmployeeContext';
 import { requestLeave, getLeaveRequests } from '../../api';
-import { useNavigation } from '@react-navigation/native'; // Import navigation
+import { useNavigation } from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 const leaveTypes = [
   { label: 'Leave Without Pay', value: 'Leave Without Pay' },
@@ -50,7 +51,7 @@ const LeaveManagement = () => {
   const [showFromDatePicker, setShowFromDatePicker] = useState(false);
   const [showToDatePicker, setShowToDatePicker] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const navigation = useNavigation(); // Use navigation
+  const navigation = useNavigation();
 
   useEffect(() => {
     if (employeeDetails) {
@@ -118,11 +119,31 @@ const LeaveManagement = () => {
     setIsModalVisible(!isModalVisible);
   };
 
+  const renderDatePicker = (date, setDate, showPicker, setShowPicker, label) => (
+    <TouchableOpacity style={styles.datePickerButton} onPress={() => setShowPicker(true)}>
+      <Text style={styles.datePickerLabel}>{label}</Text>
+      <Text style={styles.datePickerText}>{date.toDateString()}</Text>
+      {showPicker && (
+        <DateTimePicker
+          value={date}
+          mode="date"
+          display="default"
+          onChange={(event, selectedDate) => {
+            setShowPicker(false);
+            if (selectedDate) {
+              setDate(selectedDate);
+            }
+          }}
+        />
+      )}
+    </TouchableOpacity>
+  );
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <Text style={styles.title}>Request Leave</Text>
-        <View style={styles.inputBox}>
+        <View style={styles.card}>
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={leaveType}
@@ -136,210 +157,217 @@ const LeaveManagement = () => {
             </Picker>
           </View>
           <View style={styles.dateRow}>
-            <TouchableOpacity style={styles.datePicker} onPress={() => setShowFromDatePicker(true)}>
-              <Text style={styles.dateText}>{`From Date: ${fromDate.toDateString()}`}</Text>
-            </TouchableOpacity>
-            {showFromDatePicker && (
-              <DateTimePicker
-                value={fromDate}
-                mode="date"
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setShowFromDatePicker(false);
-                  if (selectedDate) {
-                    setFromDate(selectedDate);
-                  }
-                }}
-              />
-            )}
-            <TouchableOpacity style={styles.datePicker} onPress={() => setShowToDatePicker(true)}>
-              <Text style={styles.dateText}>{`To Date: ${toDate.toDateString()}`}</Text>
-            </TouchableOpacity>
-            {showToDatePicker && (
-              <DateTimePicker
-                value={toDate}
-                mode="date"
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setShowToDatePicker(false);
-                  if (selectedDate) {
-                    setToDate(selectedDate);
-                  }
-                }}
-              />
-            )}
+            {renderDatePicker(fromDate, setFromDate, showFromDatePicker, setShowFromDatePicker, 'From')}
+            {renderDatePicker(toDate, setToDate, showToDatePicker, setShowToDatePicker, 'To')}
           </View>
           <TextInput
             style={styles.input}
-            placeholder="Reason"
-            placeholderTextColor="#FFFFFF"
+            placeholder="Reason for leave"
+            placeholderTextColor="#999"
             value={reason}
             onChangeText={setReason}
+            multiline
           />
-          <TouchableOpacity style={styles.button} onPress={handleDocumentPicker}>
-            <Text style={styles.buttonText}>{document ? document.name : 'Attach Document'}</Text>
+          <TouchableOpacity style={styles.attachButton} onPress={handleDocumentPicker}>
+            <Icon name="attach" size={24} color="#153156" />
+            <Text style={styles.attachButtonText}>
+              {document ? document.name : 'Attach Document'}
+            </Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.button} onPress={handleRequestLeave}>
-          <Text style={styles.buttonText}>Request Leave</Text>
+        <TouchableOpacity style={styles.submitButton} onPress={handleRequestLeave}>
+          <Text style={styles.submitButtonText}>Submit Request</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={toggleModal}>
-          <Text style={styles.buttonText}>View Leave Requests</Text>
+        <TouchableOpacity style={styles.viewRequestsButton} onPress={toggleModal}>
+          <Text style={styles.viewRequestsButtonText}>View Leave Requests</Text>
         </TouchableOpacity>
       </ScrollView>
       <Modal isVisible={isModalVisible} onBackdropPress={toggleModal}>
         <View style={styles.modalContent}>
           <Text style={styles.modalTitle}>Leave Requests</Text>
-          <ScrollView style={styles.scrollView}>
-            {leaveRequests.map((item, index) => (
-              <View key={index} style={styles.requestItem}>
-                <Text style={styles.requestText}>{item.leave_type} - {item.total_leave_days} days</Text>
-                <Text style={styles.requestStatus}>{item.status}</Text>
+          <FlatList
+            data={leaveRequests}
+            keyExtractor={(item, index) => index.toString()}
+            renderItem={({ item }) => (
+              <View style={styles.requestItem}>
+                <View>
+                  <Text style={styles.requestType}>{item.leave_type}</Text>
+                  <Text style={styles.requestDays}>{item.total_leave_days} days</Text>
+                </View>
+                <Text style={[styles.requestStatus, { color: item.status === 'Approved' ? '#4CAF50' : '#FFC107' }]}>
+                  {item.status}
+                </Text>
               </View>
-            ))}
-          </ScrollView>
-          <TouchableOpacity style={[styles.button, styles.modalButton]} onPress={toggleModal}>
-            <Text style={styles.buttonText}>Close</Text>
+            )}
+            style={styles.requestList}
+          />
+          <TouchableOpacity style={styles.closeModalButton} onPress={toggleModal}>
+            <Text style={styles.closeModalButtonText}>Close</Text>
           </TouchableOpacity>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    paddingTop: 40,
+    backgroundColor: '#F5F7FA',
   },
   scrollContainer: {
-    alignItems: 'center',
+    padding: 20,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#153156',
     marginBottom: 20,
+    textAlign: 'center',
   },
-  inputBox: {
-    width: '90%',
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
     padding: 20,
-    borderWidth: 2,
-    borderColor: '#153156',
-    borderRadius: 10,
     marginBottom: 20,
-    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   pickerContainer: {
-    width: '100%',
-    height: 50,
-    backgroundColor: '#153156',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
     borderRadius: 10,
     marginBottom: 20,
     overflow: 'hidden',
   },
   picker: {
+    height: 50,
     width: '100%',
-    height: '100%',
-    color: '#FFFFFF',
   },
   dateRow: {
-    width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 20,
   },
-  datePicker: {
-    width: '48%',
-    height: 50,
-    backgroundColor: '#153156',
+  datePickerButton: {
+    flex: 1,
+    marginHorizontal: 5,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
     borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: 10,
   },
-  dateText: {
-    color: '#FFFFFF',
+  datePickerLabel: {
+    fontSize: 14,
+    color: '#999',
+    marginBottom: 5,
+  },
+  datePickerText: {
     fontSize: 16,
+    color: '#153156',
   },
   input: {
-    width: '100%',
-    height: 50,
-    backgroundColor: '#153156',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
     borderRadius: 10,
-    paddingHorizontal: 20,
+    padding: 15,
     marginBottom: 20,
     fontSize: 16,
-    color: '#FFFFFF',
-    justifyContent: 'center',
+    color: '#153156',
+    textAlignVertical: 'top',
+    minHeight: 100,
   },
-  button: {
+  attachButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#153156',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 20,
+  },
+  attachButtonText: {
+    marginLeft: 10,
+    color: '#153156',
+    fontSize: 16,
+  },
+  submitButton: {
     backgroundColor: '#153156',
     paddingVertical: 15,
     borderRadius: 10,
-    width: '90%',
     alignItems: 'center',
     marginBottom: 20,
-    elevation: 2,
   },
-  buttonText: {
-    color: '#fff',
+  submitButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  viewRequestsButton: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#153156',
+  },
+  viewRequestsButtonText: {
+    color: '#153156',
     fontSize: 18,
     fontWeight: 'bold',
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: '#FFFFFF',
     padding: 20,
-    borderRadius: 10,
-    alignItems: 'center',
+    borderRadius: 15,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#153156',
     marginBottom: 20,
+    textAlign: 'center',
   },
-  scrollView: {
-    width: '100%',
+  requestList: {
     maxHeight: 300,
   },
   requestItem: {
-    width: '100%',
-    padding: 15,
-    borderColor: '#153156',
-    borderWidth: 1,
-    borderRadius: 10,
-    marginBottom: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
   },
-  requestText: {
+  requestType: {
     fontSize: 16,
-    color: '#000',
+    fontWeight: 'bold',
+    color: '#153156',
+  },
+  requestDays: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 5,
   },
   requestStatus: {
     fontSize: 16,
-    color: '#153156',
+    fontWeight: 'bold',
   },
-  modalButton: {
-    marginTop: 10,
-    width: '50%',
-  },
-  navbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+  closeModalButton: {
     backgroundColor: '#153156',
-    paddingVertical: 10,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-  },
-  navbarButton: {
+    paddingVertical: 15,
+    borderRadius: 10,
     alignItems: 'center',
-    flex: 1,
+    marginTop: 20,
   },
-  navbarButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  closeModalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });
 

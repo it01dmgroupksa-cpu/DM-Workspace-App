@@ -34,24 +34,31 @@ const TaskManagement = () => {
   const [newTask, setNewTask] = useState({
     employee: '',
     task_category: '',
-    status: '',
+    status: 'Open',
     employee_division: '',
     branch: '',
     date: new Date(),
     assigned_by: employeeDetails
       ? employeeDetails.employee_name
       : 'Current User',
-    start_datetime: new Date(),
-    end_datetime: new Date(),
-    description: '',
-    hours_spent: '',
-    result: '',
+    taskDetails: [
+      {
+        description: '',
+        start_datetime: new Date(),
+        end_datetime: new Date(),
+        status: false,
+        hours_spent: '',
+        result: '',
+      },
+    ],
+    customer: '',
   });
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editIndex, setEditIndex] = useState(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [activeDatePickerIndex, setActiveDatePickerIndex] = useState(null);
 
   useEffect(() => {
     fetchEmployees();
@@ -110,41 +117,37 @@ const TaskManagement = () => {
     setNewTask({...newTask, [field]: value});
   };
 
-  const handleStatusChange = value => {
-    handleInputChange('status', value);
-
-    if (value === 'Completed') {
-      const currentDate = new Date();
-      handleInputChange('end_datetime', currentDate);
-
-      const timeSpent = calculateTimeDifference(
-        newTask.start_datetime,
-        currentDate,
-      );
-      handleInputChange('hours_spent', timeSpent);
-    }
+  const handleTaskDetailChange = (index, field, value) => {
+    const updatedTaskDetails = [...newTask.taskDetails];
+    updatedTaskDetails[index] = {...updatedTaskDetails[index], [field]: value};
+    setNewTask({...newTask, taskDetails: updatedTaskDetails});
   };
 
-  const calculateTimeDifference = (start, end) => {
-    const diffInMilliseconds = end - start;
-    const days = Math.floor(diffInMilliseconds / (1000 * 60 * 60 * 24));
-    const hours = Math.floor(
-      (diffInMilliseconds % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
-    );
-    const minutes = Math.floor(
-      (diffInMilliseconds % (1000 * 60 * 60)) / (1000 * 60),
-    );
+  const addTaskDetail = () => {
+    setNewTask({
+      ...newTask,
+      taskDetails: [
+        ...newTask.taskDetails,
+        {
+          description: '',
+          start_datetime: new Date(),
+          end_datetime: new Date(),
+          status: false,
+          hours_spent: '',
+          result: '',
+        },
+      ],
+    });
+  };
 
-    return `${days}D ${hours}H ${minutes}M`;
+  const removeTaskDetail = index => {
+    const updatedTaskDetails = newTask.taskDetails.filter((_, i) => i !== index);
+    setNewTask({...newTask, taskDetails: updatedTaskDetails});
   };
 
   const handleAddTask = () => {
-    if (
-      !newTask.description ||
-      !newTask.start_datetime ||
-      !newTask.end_datetime
-    ) {
-      Alert.alert('Error', 'Please fill in all mandatory fields');
+    if (newTask.taskDetails.some(detail => !detail.description || !detail.start_datetime || !detail.end_datetime)) {
+      Alert.alert('Error', 'Please fill in all mandatory fields for each task detail');
       return;
     }
 
@@ -161,11 +164,16 @@ const TaskManagement = () => {
     setIsModalVisible(false);
     setNewTask({
       ...newTask,
-      description: '',
-      start_datetime: new Date(),
-      end_datetime: new Date(),
-      hours_spent: '',
-      result: '',
+      taskDetails: [
+        {
+          description: '',
+          start_datetime: new Date(),
+          end_datetime: new Date(),
+          status: false,
+          hours_spent: '',
+          result: '',
+        },
+      ],
     });
   };
 
@@ -181,21 +189,42 @@ const TaskManagement = () => {
       Alert.alert('Error', 'No tasks added');
       return;
     }
-
+  
+    for (let task of tasks) {
+      if (!task.employee) {
+        Alert.alert('Error', 'Each task must have an assigned employee.');
+        return;
+      }
+    }
+  
+    console.log("Submitting the following tasks:", JSON.stringify(tasks, null, 2));
+  
     try {
-      await Promise.all(tasks.map(task => createTask(task)));
+      for (let task of tasks) {
+        const response = await createTask(task);
+        console.log('Task created:', response);
+      }
       Alert.alert('Success', 'All tasks submitted successfully');
       setTasks([]);
     } catch (error) {
-      console.error('Error submitting tasks:', error.message);
-      Alert.alert('Error', 'Failed to submit tasks');
+      console.error('Error submitting tasks:', error);
+      let errorMessage = 'Failed to submit tasks. Please try again.';
+      if (error.response && error.response.data && error.response.data._server_messages) {
+        try {
+          const serverMessages = JSON.parse(error.response.data._server_messages);
+          errorMessage = serverMessages[0].message || errorMessage;
+        } catch (parseError) {
+          console.error('Error parsing server messages:', parseError);
+        }
+      }
+      Alert.alert('Error', errorMessage);
     }
   };
 
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <Text style={styles.title}>Task Management</Text>
+        <Text style={styles.title}>Create Tasks</Text>
 
         <Text style={styles.label}>Employee</Text>
         <Dropdown
@@ -205,8 +234,8 @@ const TaskManagement = () => {
           inputSearchStyle={styles.inputSearchStyle}
           iconStyle={styles.iconStyle}
           data={employees.map(employee => ({
-            label: employee.employee_name,
-            value: employee.employee_name,
+            label: employee.name,
+            value: employee.name,
           }))}
           search
           maxHeight={300}
@@ -240,10 +269,9 @@ const TaskManagement = () => {
         <View style={styles.pickerContainer}>
           <Picker
             selectedValue={newTask.status}
-            onValueChange={value => handleStatusChange(value)}
+            onValueChange={value => handleInputChange('status', value)}
             style={styles.picker}>
-            <Picker.Item label="Select Status" value="" />
-            <Picker.Item label="Incomplete" value="Incomplete" />
+            <Picker.Item label="Open" value="Open" />
             <Picker.Item label="Completed" value="Completed" />
           </Picker>
         </View>
@@ -307,80 +335,121 @@ const TaskManagement = () => {
           <Text style={styles.buttonText}>Add Task Details</Text>
         </TouchableOpacity>
 
-        <Modal isVisible={isModalVisible} onBackdropPress={() => setIsModalVisible(false)}>
+        <Modal
+          isVisible={isModalVisible}
+          onBackdropPress={() => setIsModalVisible(false)}>
           <View style={styles.modalContent}>
             <ScrollView contentContainerStyle={styles.modalScrollContainer}>
               <Text style={styles.modalTitle}>Task Details</Text>
 
-              <Text style={styles.label}>Task Description</Text>
-              <TextInput
-                style={styles.textArea}
-                placeholder="Enter task description"
-                placeholderTextColor="#B0B0B0"
-                value={newTask.description}
-                onChangeText={(value) => handleInputChange('description', value)}
-                multiline
-              />
+              {newTask.taskDetails.map((detail, index) => (
+                <View key={index} style={styles.taskDetailContainer}>
+                  <Text style={styles.taskDetailTitle}>Task {index + 1}</Text>
 
-              <Text style={styles.label}>Start Date & Time</Text>
+                  <Text style={styles.label}>Task Description</Text>
+                  <TextInput
+                    style={styles.textArea}
+                    placeholder="Enter task description"
+                    placeholderTextColor="#B0B0B0"
+                    value={detail.description}
+                    onChangeText={value => handleTaskDetailChange(index, 'description', value)}
+                    multiline
+                  />
+
+                  <Text style={styles.label}>Start Date & Time</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => {
+                      setActiveDatePickerIndex(index);
+                      setShowStartDatePicker(true);
+                    }}>
+                    <Text style={styles.dateText}>
+                      {detail.start_datetime.toLocaleString()}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.label}>End Date & Time</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => {
+                      setActiveDatePickerIndex(index);
+                      setShowEndDatePicker(true);
+                    }}>
+                    <Text style={styles.dateText}>
+                      {detail.end_datetime.toLocaleString()}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.label}>Hours Spent</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter hours spent"
+                    placeholderTextColor="#B0B0B0"
+                    value={detail.hours_spent}
+                    onChangeText={value => handleTaskDetailChange(index, 'hours_spent', value)}
+                  />
+
+                  <Text style={styles.label}>Result</Text>
+                  <TextInput
+                    style={styles.textArea}
+                    placeholder="Enter result"
+                    placeholderTextColor="#B0B0B0"
+                    value={detail.result}
+                    onChangeText={value => handleTaskDetailChange(index, 'result', value)}
+                    multiline
+                  />
+
+                  {index > 0 && (
+                    <TouchableOpacity
+                      style={styles.removeButton}
+                      onPress={() => removeTaskDetail(index)}>
+                      <Text style={styles.buttonText}>Remove Task</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+
               <TouchableOpacity
-                style={styles.input}
-                onPress={() => setShowStartDatePicker(true)}
-              >
-                <Text style={styles.dateText}>
-                  {newTask.start_datetime
-                    ? newTask.start_datetime.toLocaleString()
-                    : 'Select Start Date & Time'}
+                style={styles.addButton}
+                onPress={addTaskDetail}>
+                <Text style={styles.buttonText}>Add Another Task</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleAddTask}>
+                <Text style={styles.buttonText}>
+                  {isEditing ? 'Update Task' : 'Add Task'}
                 </Text>
               </TouchableOpacity>
-              <DateTimePickerModal
-                isVisible={showStartDatePicker}
-                mode="datetime"
-                onConfirm={(date) => {
-                  setShowStartDatePicker(false);
-                  handleInputChange('start_datetime', date);
-                }}
-                onCancel={() => setShowStartDatePicker(false)}
-              />
-
-              <Text style={styles.label}>Status</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={newTask.status}
-                  onValueChange={(value) => handleStatusChange(value)}
-                  style={styles.picker}
-                >
-                  <Picker.Item label="Open" value="Open" />
-                  <Picker.Item label="Completed" value="Completed" />
-                </Picker>
-              </View>
-
-              <Text style={styles.label}>End Date & Time</Text>
-              <TextInput
-                style={styles.input}
-                value={newTask.end_datetime ? newTask.end_datetime.toLocaleString() : 'Pending Completion'}
-                editable={false}
-                placeholderTextColor="#B0B0B0"
-              />
-
-              <Text style={styles.label}>Hours Spent</Text>
-              <TextInput
-                style={styles.input}
-                value={newTask.hours_spent}
-                editable={false}
-                placeholder="Auto-calculated"
-                placeholderTextColor="#B0B0B0"
-              />
-
-              <TouchableOpacity style={styles.saveButton} onPress={handleAddTask}>
-                <Text style={styles.buttonText}>{isEditing ? 'Update Task' : 'Add Task'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalCloseButton} onPress={() => setIsModalVisible(false)}>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setIsModalVisible(false)}>
                 <Text style={styles.buttonText}>Close</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
         </Modal>
+
+        <DateTimePickerModal
+          isVisible={showStartDatePicker}
+          mode="datetime"
+          onConfirm={date => {
+            setShowStartDatePicker(false);
+            handleTaskDetailChange(activeDatePickerIndex, 'start_datetime', date);
+          }}
+          onCancel={() => setShowStartDatePicker(false)}
+        />
+
+        <DateTimePickerModal
+          isVisible={showEndDatePicker}
+          mode="datetime"
+          onConfirm={date => {
+            setShowEndDatePicker(false);
+            handleTaskDetailChange(activeDatePickerIndex, 'end_datetime', date);
+          }}
+          onCancel={() => setShowEndDatePicker(false)}
+        />
 
         <Text style={styles.label}>Added Tasks</Text>
         {tasks.length === 0 ? (
@@ -389,10 +458,9 @@ const TaskManagement = () => {
           tasks.map((task, index) => (
             <TouchableOpacity key={index} onPress={() => handleEditTask(index)}>
               <View style={styles.taskItem}>
-                <Text>{`Task ${index + 1}: ${task.description}`}</Text>
-                <Text>{`Start Date: ${task.start_datetime.toLocaleString()}`}</Text>
-                <Text>{`End Date: ${task.end_datetime ? task.end_datetime.toLocaleString() : 'Not Completed'}`}</Text>
-                <Text>{`Hours Spent: ${task.hours_spent}`}</Text>
+                <Text>{`Task ${index + 1}: ${task.taskDetails[0].description}`}</Text>
+                <Text>{`Employee: ${task.employee}`}</Text>
+                <Text>{`Category: ${task.task_category}`}</Text>
               </View>
             </TouchableOpacity>
           ))
@@ -411,7 +479,7 @@ const TaskManagement = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F5F7FA',
     paddingHorizontal: 20,
     paddingTop: 40,
   },
@@ -419,27 +487,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#153156',
-    marginBottom: 20,
+    marginBottom: 30,
+    textAlign: 'center',
   },
   label: {
     fontSize: 16,
+    fontWeight: '600',
     color: '#153156',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   input: {
     width: '100%',
     height: 50,
-    borderColor: '#153156',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E7FF',
     borderWidth: 1,
-    borderRadius: 30,
-    paddingHorizontal: 20,
+    borderRadius: 12,
+    paddingHorizontal: 16,
     marginBottom: 20,
     fontSize: 16,
     color: '#153156',
-    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   dateText: {
     fontSize: 16,
@@ -448,11 +523,17 @@ const styles = StyleSheet.create({
   pickerContainer: {
     width: '100%',
     height: 50,
-    borderColor: '#153156',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E7FF',
     borderWidth: 1,
-    borderRadius: 30,
+    borderRadius: 12,
     marginBottom: 20,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   picker: {
     width: '100%',
@@ -460,80 +541,121 @@ const styles = StyleSheet.create({
   },
   textArea: {
     width: '100%',
-    borderColor: '#153156',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E7FF',
     borderWidth: 1,
-    borderRadius: 30,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     fontSize: 16,
     color: '#153156',
     marginBottom: 20,
     textAlignVertical: 'top',
     height: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   addButton: {
     backgroundColor: '#153156',
-    paddingVertical: 15,
-    borderRadius: 30,
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   saveButton: {
     backgroundColor: '#153156',
-    paddingVertical: 15,
-    borderRadius: 30,
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   submitButton: {
     backgroundColor: '#153156',
-    paddingVertical: 15,
-    borderRadius: 30,
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
+    marginBottom: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   modalContent: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    padding: 24,
+    borderRadius: 16,
     width: '100%',
+    maxHeight: '90%',
   },
   modalScrollContainer: {
-    alignItems: 'center',
+    paddingBottom: 20,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 10,
+    color: '#153156',
+    marginBottom: 20,
+    textAlign: 'center',
   },
   modalCloseButton: {
     backgroundColor: '#153156',
-    paddingVertical: 10,
-    borderRadius: 30,
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   buttonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
   taskItem: {
-    padding: 10,
-    backgroundColor: '#f0f0f0',
-    marginBottom: 10,
-    borderRadius: 10,
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 12,
+    borderRadius: 12,
     width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   dropdown: {
     height: 50,
-    borderColor: '#153156',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E7FF',
     borderWidth: 1,
-    borderRadius: 30,
-    paddingHorizontal: 20,
+    borderRadius: 12,
+    paddingHorizontal: 16,
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   placeholderStyle: {
     fontSize: 16,
@@ -550,6 +672,35 @@ const styles = StyleSheet.create({
   iconStyle: {
     width: 20,
     height: 20,
+  },
+  removeButton: {
+    backgroundColor: '#FF4757',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  taskDetailContainer: {
+    backgroundColor: '#F5F7FA',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  taskDetailTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#153156',
+    marginBottom: 12,
   },
 });
 

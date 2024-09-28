@@ -1,92 +1,75 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  Modal,
-  Linking,
-} from 'react-native';
-import { Picker } from '@react-native-picker/picker';
-import {
-  getAllEmployees,
-  getEmployeesByDepartment,
-  searchEmployees,
-  sortEmployees,
-  getEmployeeById,
-  getDepartments,
-} from '../../api';
+import React, { useState, useEffect, useContext } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Linking } from 'react-native';
+import { getAllEmployeesDir } from '../../api';
+import { EmployeeContext } from '../context/EmployeeContext'; // Importing EmployeeContext
 
 const EmployeeDirectory = () => {
-  const [employees, setEmployees] = useState([]);
-  const [departments, setDepartments] = useState([]);
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [employees, setEmployees] = useState([]); // Store all employee details
+  const [filteredEmployees, setFilteredEmployees] = useState([]); // For search results
+  const [selectedEmployee, setSelectedEmployee] = useState(null); // For modal
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [department, setDepartment] = useState('');
   const [sortBy, setSortBy] = useState('employee_name');
   const [sortOrder, setSortOrder] = useState('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  const { employeeDetails } = useContext(EmployeeContext); // Access the logged-in employee's details
+  const loggedInEmployeeId = employeeDetails.name; // This is the employee_id of the logged-in user
+
   useEffect(() => {
     fetchEmployees();
-    fetchDepartments();
-  }, [currentPage]);
+  }, []);
+
+  useEffect(() => {
+    if (searchQuery) {
+      const filtered = employees.filter(emp => {
+        if (!isNaN(searchQuery)) {
+          // If the search query is a number, search by employee_id
+          return emp.employee_id.includes(searchQuery);
+        } else {
+          // Otherwise, search by employee_name
+          return emp.employee_name.toLowerCase().includes(searchQuery.toLowerCase());
+        }
+      });
+      setFilteredEmployees(filtered);
+    } else {
+      setFilteredEmployees(employees);
+    }
+  }, [searchQuery, employees]);
 
   const fetchEmployees = async () => {
     try {
-      const data = await getAllEmployees();
-      const activeEmployees = data.filter(emp => emp.status === 'Active'); // Filter by active status
-      setEmployees(activeEmployees);
+      const data = await getAllEmployeesDir();
+      const filteredData = data.employee_details
+        .filter(emp => emp.employee_id !== loggedInEmployeeId) // Exclude the logged-in employee
+        .filter(emp => emp.status !== 'Inactive'); // Exclude inactive employees
+      
+      setEmployees(filteredData);
+      setFilteredEmployees(filteredData); // Also set this for the initial view
     } catch (error) {
       console.error('Error fetching employees:', error);
     }
   };
 
-  const fetchDepartments = async () => {
-    try {
-      const data = await getDepartments();
-      setDepartments(data);
-    } catch (error) {
-      console.error('Error fetching departments:', error);
-    }
+  const handleSearch = () => {
+    // Search logic is handled by the useEffect above
   };
 
-  const handleSearch = async () => {
-    try {
-      const result = await searchEmployees(searchQuery);
-      const activeEmployees = result.filter(emp => emp.status === 'Active'); // Filter by active status
-      setEmployees(activeEmployees);
-    } catch (error) {
-      console.error('Error searching employees:', error);
-    }
-  };
-
-  const handleDepartmentFilter = async value => {
-    setDepartment(value);
-    if (value === '') {
-      fetchEmployees(); // Fetch all employees without any department filter
-    } else {
-      const result = await getEmployeesByDepartment(value);
-      const activeEmployees = result.filter(emp => emp.status === 'Active'); // Filter by active status
-      setEmployees(activeEmployees);
-    }
-  };
-
-  const handleSort = async field => {
+  const handleSort = (field) => {
     const order = sortBy === field && sortOrder === 'asc' ? 'desc' : 'asc';
     setSortBy(field);
     setSortOrder(order);
-    const result = await sortEmployees(field, order);
-    const activeEmployees = result.filter(emp => emp.status === 'Active'); // Filter by active status
-    setEmployees(activeEmployees);
+    const sorted = [...filteredEmployees].sort((a, b) => {
+      if (a[field] < b[field]) return order === 'asc' ? -1 : 1;
+      if (a[field] > b[field]) return order === 'asc' ? 1 : -1;
+      return 0;
+    });
+    setFilteredEmployees(sorted);
   };
 
-  const handleEmployeeClick = async employeeId => {
-    const employee = await getEmployeeById(employeeId);
+  const handleEmployeeClick = (employeeId) => {
+    const employee = employees.find(emp => emp.employee_id === employeeId);
     setSelectedEmployee(employee);
     setIsModalVisible(true);
   };
@@ -96,11 +79,19 @@ const EmployeeDirectory = () => {
     setSelectedEmployee(null);
   };
 
-  const totalPages = Math.ceil(employees.length / itemsPerPage);
+  const handlePhonePress = (phoneNumber) => {
+    Linking.openURL(`tel:${phoneNumber}`);
+  };
 
-  const displayedEmployees = employees.slice(
+  const handleEmailPress = (email) => {
+    Linking.openURL(`mailto:${email}`);
+  };
+
+  const totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
+
+  const displayedEmployees = filteredEmployees.slice(
     (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage,
+    currentPage * itemsPerPage
   );
 
   const handleNextPage = () => {
@@ -122,14 +113,6 @@ const EmployeeDirectory = () => {
     return text;
   };
 
-  const handlePhonePress = phoneNumber => {
-    Linking.openURL(`tel:${phoneNumber}`);
-  };
-
-  const handleEmailPress = email => {
-    Linking.openURL(`mailto:${email}`);
-  };
-
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
@@ -147,24 +130,12 @@ const EmployeeDirectory = () => {
           <Text style={styles.buttonText}>Search</Text>
         </TouchableOpacity>
 
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={department}
-            onValueChange={value => handleDepartmentFilter(value)}
-            style={styles.picker}>
-            <Picker.Item label="All Departments" value="" />
-            {departments.map((dept, index) => (
-              <Picker.Item key={index} label={dept.name} value={dept.name} />
-            ))}
-          </Picker>
-        </View>
-
         <View style={styles.table}>
           <View style={styles.tableHeader}>
             <Text
               style={styles.tableHeaderText}
-              onPress={() => handleSort('employee_number')}>
-              Employee Number
+              onPress={() => handleSort('employee_id')}>
+              Employee ID
             </Text>
             <Text
               style={styles.tableHeaderText}
@@ -180,11 +151,11 @@ const EmployeeDirectory = () => {
 
           {displayedEmployees.map(employee => (
             <TouchableOpacity
-              key={employee.name}
+              key={employee.employee_id}
               style={styles.tableRow}
-              onPress={() => handleEmployeeClick(employee.name)}>
+              onPress={() => handleEmployeeClick(employee.employee_id)}>
               <Text style={styles.tableRowText}>
-                {employee.employee_number}
+                {employee.employee_id}
               </Text>
               <Text style={styles.tableRowText}>
                 {truncateText(employee.employee_name, 20)}
@@ -198,10 +169,7 @@ const EmployeeDirectory = () => {
 
         <View style={styles.paginationContainer}>
           <TouchableOpacity
-            style={[
-              styles.paginationButton,
-              currentPage === 1 && styles.disabledButton,
-            ]}
+            style={[styles.paginationButton, currentPage === 1 && styles.disabledButton]}
             onPress={handlePreviousPage}
             disabled={currentPage === 1}>
             <Text style={styles.paginationButtonText}>Previous</Text>
@@ -210,10 +178,7 @@ const EmployeeDirectory = () => {
             Page {currentPage} of {totalPages}
           </Text>
           <TouchableOpacity
-            style={[
-              styles.paginationButton,
-              currentPage === totalPages && styles.disabledButton,
-            ]}
+            style={[styles.paginationButton, currentPage === totalPages && styles.disabledButton]}
             onPress={handleNextPage}
             disabled={currentPage === totalPages}>
             <Text style={styles.paginationButtonText}>Next</Text>
@@ -228,32 +193,18 @@ const EmployeeDirectory = () => {
             onRequestClose={handleCloseModal}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>
-                  {selectedEmployee.employee_name}
+                <Text style={styles.modalTitle}>{selectedEmployee.employee_name}</Text>
+                <Text style={styles.modalText}>
+                  <Text style={styles.modalLabel}>Employee ID:</Text> {selectedEmployee.employee_id}
                 </Text>
                 <Text style={styles.modalText}>
-                  <Text style={styles.modalLabel}>Employee Number:</Text>{' '}
-                  {selectedEmployee.employee_number}
+                  <Text style={styles.modalLabel}>Job Location:</Text> {selectedEmployee.custom_job_location}
                 </Text>
-                <Text style={styles.modalText}>
-                  <Text style={styles.modalLabel}>Department:</Text>{' '}
-                  {selectedEmployee.department}
+                <Text style={styles.modalText} onPress={() => handlePhonePress(selectedEmployee.cell_number)}>
+                  <Text style={styles.modalLabel}>Company Phone:</Text> {selectedEmployee.cell_number}
                 </Text>
-                <Text style={styles.modalText}>
-                  <Text style={styles.modalLabel}>Job Location:</Text>{' '}
-                  {selectedEmployee.custom_job_location}
-                </Text>
-                <Text
-                  style={[styles.modalText]}
-                  onPress={() => handlePhonePress(selectedEmployee.cell_number)}>
-                  <Text style={styles.modalLabel}>Company Phone:</Text>{' '}
-                  {selectedEmployee.cell_number}
-                </Text>
-                <Text
-                  style={[styles.modalText]}
-                  onPress={() => handleEmailPress(selectedEmployee.company_email)}>
-                  <Text style={styles.modalLabel}>Company Email:</Text>{' '}
-                  {selectedEmployee.company_email}
+                <Text style={styles.modalText} onPress={() => handleEmailPress(selectedEmployee.company_email)}>
+                  <Text style={styles.modalLabel}>Company Email:</Text> {selectedEmployee.company_email}
                 </Text>
                 <TouchableOpacity
                   style={styles.modalCloseButton}
@@ -272,7 +223,7 @@ const EmployeeDirectory = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F5F7FA',
     paddingHorizontal: 20,
     paddingTop: 40,
   },
@@ -280,61 +231,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#153156',
-    marginBottom: 20,
+    marginBottom: 30,
+    textAlign: 'center',
   },
   input: {
     width: '100%',
     height: 50,
-    borderColor: '#153156',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E7FF',
     borderWidth: 1,
-    borderRadius: 30,
-    paddingHorizontal: 20,
+    borderRadius: 12,
+    paddingHorizontal: 16,
     marginBottom: 20,
     fontSize: 16,
     color: '#153156',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   searchButton: {
     backgroundColor: '#153156',
-    paddingVertical: 15,
-    borderRadius: 30,
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   buttonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  pickerContainer: {
-    width: '100%',
-    height: 50,
-    borderColor: '#153156',
-    borderWidth: 1,
-    borderRadius: 30,
-    marginBottom: 20,
-    overflow: 'hidden',
-  },
-  picker: {
-    width: '100%',
-    height: '100%',
   },
   table: {
     width: '100%',
     borderWidth: 1,
-    borderColor: '#153156',
-    borderRadius: 10,
+    borderColor: '#E0E7FF',
+    borderRadius: 12,
     overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#e0e0e0',
-    paddingVertical: 10,
+    backgroundColor: '#F0F4FF',
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#153156',
+    borderBottomColor: '#E0E7FF',
   },
   tableHeaderText: {
     flex: 1,
@@ -345,9 +301,9 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
+    borderBottomColor: '#E0E7FF',
   },
   tableRowText: {
     flex: 1,
@@ -359,24 +315,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 24,
     marginBottom: 40,
   },
   paginationButton: {
     backgroundColor: '#153156',
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 20,
+    borderRadius: 12,
     marginHorizontal: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   paginationButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
   paginationText: {
     fontSize: 16,
     color: '#153156',
+    fontWeight: '600',
   },
   disabledButton: {
     opacity: 0.5,
@@ -388,32 +350,44 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 10,
-    width: '80%',
+    backgroundColor: '#FFFFFF',
+    padding: 24,
+    borderRadius: 16,
+    width: '90%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 10,
+    color: '#153156',
+    marginBottom: 16,
+    textAlign: 'center',
   },
   modalText: {
     fontSize: 16,
-    marginBottom: 10,
+    marginBottom: 12,
+    color: '#153156',
   },
   modalLabel: {
     fontWeight: 'bold',
+    color: '#153156',
   },
   modalCloseButton: {
     backgroundColor: '#153156',
-    paddingVertical: 10,
-    borderRadius: 30,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
-  },
-  linkText: {
-    color: 'blue',
-    textDecorationLine: 'underline',
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });
 

@@ -8,54 +8,48 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import Modal from 'react-native-modal';
 import { Dropdown } from 'react-native-element-dropdown';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { EmployeeContext } from '../context/EmployeeContext';
-import { getBranches, getCustomers, getItemsList, submitSalesPersonRFQ, getSalesPersonNameByEmployeeID } from '../../api';  // Add getSalesPersonNameByEmployeeID
+import {
+  getCustomers,
+  getItemsList,
+  submitSalesPersonRFQ,
+  getSalesPersonNameByEmployeeID,
+  getUOMs,
+} from '../../api';
 import RFQModal from './RFQModal';
 
 const SalesPersonRFQ = () => {
   const { employeeDetails } = useContext(EmployeeContext);
-  const [branch, setBranch] = useState('');
   const [customerName, setCustomerName] = useState('');
-  const [items, setItems] = useState([{ item: '', quantity: '' }]);
-  const [branches, setBranches] = useState([]);
+  const [remarks, setRemarks] = useState('');
+  const [items, setItems] = useState([{ item: '', quantity: '', uom: '' }]);
   const [customers, setCustomers] = useState([]);
   const [itemsList, setItemsList] = useState([]);
+  const [uomOptions, setUomOptions] = useState([]);
   const [date, setDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [salesPersonName, setSalesPersonName] = useState('');  // New state to hold the sales person's name
+  const [modalVisible, setModalVisible] = useState(false);  // For item modal
+  const [rfqModalVisible, setRFQModalVisible] = useState(false);  // For RFQModal
+  const [salesPersonName, setSalesPersonName] = useState('');
+  const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
+  const [isItemModalVisible, setItemModalVisible] = useState(false);
+  const [currentItemIndex, setCurrentItemIndex] = useState(null); // Track item index
 
   useEffect(() => {
-    fetchSalesPersonName();  // Fetch the sales person's name
-    fetchBranches();
+    fetchSalesPersonName();
     fetchCustomers();
     fetchItemsList();
+    fetchUOMOptions();
   }, []);
 
   const fetchSalesPersonName = async () => {
     try {
-      // Fetch the sales person name by employee ID
       const name = await getSalesPersonNameByEmployeeID(employeeDetails.name);
-      if (name) {
-        setSalesPersonName(name);
-      } else {
-        console.warn('No sales person found for this employee');
-        setSalesPersonName('');
-      }
+      setSalesPersonName(name || '');
     } catch (error) {
       console.error('Error fetching Sales Person name:', error);
-    }
-  };
-
-  const fetchBranches = async () => {
-    try {
-      const branchList = await getBranches();
-      setBranches(branchList);
-    } catch (error) {
-      console.error('Error fetching branches:', error);
     }
   };
 
@@ -77,26 +71,31 @@ const SalesPersonRFQ = () => {
     }
   };
 
-  const handleAddRow = () => {
-    setItems([...items, { item: '', quantity: '' }]);
+  const fetchUOMOptions = async () => {
+    try {
+      const uoms = await getUOMs();
+      setUomOptions(uoms);
+    } catch (error) {
+      console.error('Error fetching UOMs:', error);
+    }
   };
 
-  const handleRemoveRow = (index) => {
+  const handleAddItem = () => {
+    setItems([...items, { item: '', quantity: '', uom: '' }]);
+  };
+
+  const handleRemoveItem = (index) => {
     const updatedItems = [...items];
     updatedItems.splice(index, 1);
     setItems(updatedItems);
   };
 
-  const handleItemChange = (index, value) => {
+  const handleItemChange = (index, field, value) => {
     const updatedItems = [...items];
-    updatedItems[index].item = value;
-    setItems(updatedItems);
-  };
-
-  const handleQuantityChange = (index, value) => {
-    const updatedItems = [...items];
-    updatedItems[index].quantity = value;
-    setItems(updatedItems);
+    if (updatedItems[index]) {
+      updatedItems[index][field] = value;
+      setItems(updatedItems);
+    }
   };
 
   const handleSubmit = async () => {
@@ -105,21 +104,25 @@ const SalesPersonRFQ = () => {
       return;
     }
 
-    if (items.some(i => !i.item || !i.quantity)) {
-      Alert.alert('Error', 'Please fill in all fields');
+    // Validate items
+    const invalidItems = items.filter(item => !item.item || !item.quantity || !item.uom);
+    if (invalidItems.length > 0) {
+      Alert.alert('Error', 'Please fill in all fields for each item.');
       return;
     }
 
     try {
       const newRFQ = {
         doctype: 'Sales Person RFQ',
-        sales_person: salesPersonName,  // Use salesPersonName here
-        branch: branch,
+        sales_person: salesPersonName,
+        branch: employeeDetails.branch,
         customer_name: customerName,
-        date: date.toISOString().split('T')[0], // Format date as YYYY-MM-DD
+        remarks: remarks,
+        date: date.toISOString().split('T')[0],
         items: items.map(item => ({
           item_code: item.item,
           qty: parseFloat(item.quantity).toFixed(2),
+          uom: item.uom,
         })),
         status: 'Draft',
       };
@@ -127,57 +130,53 @@ const SalesPersonRFQ = () => {
       console.log('Submitting RFQ:', newRFQ);
       await submitSalesPersonRFQ(newRFQ);
       Alert.alert('Success', 'Sales Person RFQ submitted');
-      setBranch('');
       setCustomerName('');
-      setItems([{ item: '', quantity: '' }]);
-      setDate(new Date());
+      setRemarks('');
+      setItems([{ item: '', quantity: '', uom: '' }]);
     } catch (error) {
-      console.error('Error submitting Sales Person RFQ:', error.response ? error.response.data : error.message);
+      console.error('Error submitting Sales Person RFQ:', error);
       Alert.alert('Error', 'Failed to submit Sales Person RFQ');
     }
   };
 
-  const handleDateChange = (event, selectedDate) => {
-    const currentDate = selectedDate || date;
-    setShowDatePicker(false);
-    setDate(currentDate);
+  const showDatePicker = () => {
+    setDatePickerVisibility(true);
+  };
+
+  const hideDatePicker = () => {
+    setDatePickerVisibility(false);
+  };
+
+  const handleConfirm = (selectedDate) => {
+    setDate(selectedDate);
+    hideDatePicker();
+  };
+
+  const openItemModal = (index) => {
+    setCurrentItemIndex(index);
+    setItemModalVisible(true);
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContainer}>
-      <View style={styles.container}>
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
         <Text style={styles.title}>Sales Person RFQ</Text>
 
         <Text style={styles.label}>Date</Text>
-        <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
+        <TouchableOpacity style={styles.input} onPress={showDatePicker}>
           <Text style={styles.dateText}>{date.toDateString()}</Text>
         </TouchableOpacity>
-        {showDatePicker && (
-          <DateTimePicker
-            value={date}
-            mode="date"
-            display="default"
-            onChange={handleDateChange}
-          />
-        )}
 
-        <Text style={styles.label}>Branch</Text>
-        <View style={styles.pickerContainer}>
-          <Picker
-            selectedValue={branch}
-            onValueChange={(itemValue) => setBranch(itemValue)}
-            style={styles.picker}
-          >
-            <Picker.Item label="Select Branch" value="" />
-            {branches.map((branch, index) => (
-              <Picker.Item key={index} label={branch.branch} value={branch.branch} />
-            ))}
-          </Picker>
-        </View>
+        <DateTimePickerModal
+          isVisible={isDatePickerVisible}
+          mode="date"
+          onConfirm={handleConfirm}
+          onCancel={hideDatePicker}
+        />
 
         <Text style={styles.label}>Customer Name</Text>
         <Dropdown
-          style={styles.dropdown}
+          style={[styles.input, styles.dropdown]}
           placeholderStyle={styles.placeholderStyle}
           selectedTextStyle={styles.selectedTextStyle}
           inputSearchStyle={styles.inputSearchStyle}
@@ -198,18 +197,60 @@ const SalesPersonRFQ = () => {
           }}
         />
 
+        <Text style={styles.label}>Remarks</Text>
+        <TextInput
+          style={styles.textArea}
+          placeholder="Enter any remarks"
+          placeholderTextColor="#B0B0B0"
+          value={remarks}
+          onChangeText={setRemarks}
+          multiline
+        />
+
+        <Text style={styles.label}>Items</Text>
         {items.map((item, index) => (
-          <View key={index} style={styles.itemRowbg}>
+          <TouchableOpacity
+            key={index}
+            style={styles.itemContainer}
+            onPress={() => openItemModal(index)}
+          >
+            <Text style={styles.itemTitle}>Item {index + 1}</Text>
+            <Text>{`Item: ${item.item || 'Not selected'}`}</Text>
+            <Text>{`Quantity: ${item.quantity || 'Not set'}`}</Text>
+            <Text>{`UOM: ${item.uom || 'Not selected'}`}</Text>
+          </TouchableOpacity>
+        ))}
+
+        <TouchableOpacity style={styles.addButton} onPress={handleAddItem}>
+          <Text style={styles.buttonText}>Add Item</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
+          <Text style={styles.buttonText}>Submit RFQ</Text>
+        </TouchableOpacity>
+
+        {/* Linking the View My RFQ to the RFQModal */}
+        <TouchableOpacity style={styles.viewRFQButton} onPress={() => setRFQModalVisible(true)}>
+          <Text style={styles.buttonText}>View My RFQs</Text>
+        </TouchableOpacity>
+
+        <Modal
+          isVisible={isItemModalVisible}
+          onBackdropPress={() => setItemModalVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Item Details</Text>
+
             <Text style={styles.label}>Item</Text>
             <Dropdown
-              style={styles.dropdown}
+              style={[styles.input, styles.dropdown]}
               placeholderStyle={styles.placeholderStyle}
               selectedTextStyle={styles.selectedTextStyle}
               inputSearchStyle={styles.inputSearchStyle}
               iconStyle={styles.iconStyle}
-              data={itemsList.map((listItem) => ({
-                label: listItem.item_name,
-                value: listItem.name,
+              data={itemsList.map((item) => ({
+                label: item.item_name,
+                value: item.name,
               }))}
               search
               maxHeight={300}
@@ -217,140 +258,215 @@ const SalesPersonRFQ = () => {
               valueField="value"
               placeholder="Select Item"
               searchPlaceholder="Search..."
-              value={item.item}
-              onChange={selectedItem => {
-                handleItemChange(index, selectedItem.value);
+              value={currentItemIndex !== null ? items[currentItemIndex]?.item : ''}
+              onChange={item => {
+                handleItemChange(currentItemIndex, 'item', item.value);
               }}
             />
 
             <Text style={styles.label}>Quantity</Text>
             <TextInput
               style={styles.input}
-              placeholder="Quantity"
-              placeholderTextColor="#153156"
-              value={item.quantity}
-              onChangeText={(value) => handleQuantityChange(index, value)}
+              placeholder="Enter quantity"
+              placeholderTextColor="#B0B0B0"
+              value={currentItemIndex !== null ? items[currentItemIndex]?.quantity : ''}
+              onChangeText={(value) => handleItemChange(currentItemIndex, 'quantity', value)}
               keyboardType="numeric"
             />
-            {index > 0 && (
-              <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveRow(index)}>
-                <Text style={styles.buttonText}>Remove</Text>
+
+            <Text style={styles.label}>UOM</Text>
+            <Dropdown
+              style={[styles.input, styles.dropdown]}
+              placeholderStyle={styles.placeholderStyle}
+              selectedTextStyle={styles.selectedTextStyle}
+              inputSearchStyle={styles.inputSearchStyle}
+              iconStyle={styles.iconStyle}
+              data={uomOptions.map(uom => ({
+                label: uom.uom_name,
+                value: uom.uom_name,
+              }))}
+              search
+              maxHeight={300}
+              labelField="label"
+              valueField="value"
+              placeholder="Select UOM"
+              searchPlaceholder="Search..."
+              value={currentItemIndex !== null ? items[currentItemIndex]?.uom : ''}
+              onChange={item => {
+                handleItemChange(currentItemIndex, 'uom', item.value);
+              }}
+            />
+
+            <TouchableOpacity
+              style={styles.saveButton}
+              onPress={() => setItemModalVisible(false)}
+            >
+              <Text style={styles.buttonText}>Save</Text>
+            </TouchableOpacity>
+
+            {currentItemIndex > 0 && (
+              <TouchableOpacity
+                style={styles.removeButton}
+                onPress={() => {
+                  handleRemoveItem(currentItemIndex);
+                  setItemModalVisible(false);
+                }}
+              >
+                <Text style={styles.buttonText}>Remove Item</Text>
               </TouchableOpacity>
             )}
           </View>
-        ))}
+        </Modal>
 
-        <TouchableOpacity style={styles.addButton} onPress={handleAddRow}>
-          <Text style={styles.buttonText}>Add Row</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.buttonText}>Submit RFQ</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.viewRFQButton} onPress={() => setModalVisible(true)}>
-          <Text style={styles.buttonText}>View My RFQs</Text>
-        </TouchableOpacity>
-
-        <RFQModal visible={modalVisible} onClose={() => setModalVisible(false)} />
-      </View>
-    </ScrollView>
+        {/* Add RFQModal for Viewing RFQs */}
+        <RFQModal visible={rfqModalVisible} onClose={() => setRFQModalVisible(false)} />
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F5F7FA',
     paddingHorizontal: 20,
     paddingTop: 40,
-    backgroundColor: '#FFFFFF',
   },
   scrollContainer: {
-    flexGrow: 1,
+    alignItems: 'center',
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#153156',
-    marginBottom: 20,
+    marginBottom: 30,
     textAlign: 'center',
   },
   label: {
     fontSize: 16,
+    fontWeight: '600',
     color: '#153156',
-    marginBottom: 10,
+    marginBottom: 8,
+    alignSelf: 'flex-start',
   },
   input: {
     width: '100%',
     height: 50,
-    borderColor: '#153156',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E7FF',
     borderWidth: 1,
-    borderRadius: 30,
-    paddingHorizontal: 20,
+    borderRadius: 12,
+    paddingHorizontal: 16,
     marginBottom: 20,
     fontSize: 16,
     color: '#153156',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
     justifyContent: 'center',
-  },
-  pickerContainer: {
-    width: '100%',
-    height: 50,
-    borderColor: '#153156',
-    borderWidth: 1,
-    borderRadius: 30,
-    marginBottom: 20,
-    overflow: 'hidden',
-  },
-  picker: {
-    width: '100%',
-    height: '100%',
   },
   dateText: {
     fontSize: 16,
     color: '#153156',
   },
-  itemRowbg: {
+  textArea: {
     width: '100%',
+    height: 100,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E7FF',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     marginBottom: 20,
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: '#f0f0f0',
+    fontSize: 16,
+    color: '#153156',
+    textAlignVertical: 'top',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  itemContainer: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E7FF',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  itemTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#153156',
+    marginBottom: 8,
   },
   addButton: {
     backgroundColor: '#153156',
-    paddingVertical: 15,
-    borderRadius: 30,
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
     marginBottom: 20,
-  },
-  removeButton: {
-    backgroundColor: '#E53935',
-    paddingVertical: 15,
-    borderRadius: 30,
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   submitButton: {
     backgroundColor: '#153156',
-    paddingVertical: 15,
-    borderRadius: 30,
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  viewRFQButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 16,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   buttonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
   dropdown: {
     height: 50,
-    borderColor: '#153156',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E0E7FF',
     borderWidth: 1,
-    borderRadius: 30,
-    paddingHorizontal: 20,
+    borderRadius: 12,
+    paddingHorizontal: 16,
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   placeholderStyle: {
     fontSize: 16,
@@ -368,14 +484,45 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
   },
-  viewRFQButton: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 15,
-    borderRadius: 30,
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    padding: 24,
+    borderRadius: 16,
+    width: '100%',
+    maxHeight: '90%',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#153156',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  saveButton: {
+    backgroundColor: '#153156',
+    paddingVertical: 16,
+    borderRadius: 12,
     width: '100%',
     alignItems: 'center',
-    marginBottom: 20,
     marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  removeButton: {
+    backgroundColor: '#FF4757',
+    paddingVertical: 16,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });
 
