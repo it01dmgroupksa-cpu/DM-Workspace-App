@@ -228,7 +228,8 @@ export const hasCheckedInToday = async employeeID => {
           ['employee', '=', employeeID],
           ['log_type', '=', 'IN'],
           ['time', '>=', todayStart],
-          ['time', '<=', todayEnd]
+          ['time', '<=', todayEnd],
+          ['custom_attendance_device', '=', 'Mobile Device']
         ]),
       },
       headers: {
@@ -258,7 +259,8 @@ export const hasCheckedOutToday = async employeeID => {
           ['employee', '=', employeeID],
           ['log_type', '=', 'OUT'],
           ['time', '>=', todayStart],
-          ['time', '<=', todayEnd]
+          ['time', '<=', todayEnd],
+          ['custom_attendance_device', '=', 'Mobile Device']
         ]),
       },
       headers: {
@@ -1810,7 +1812,8 @@ export const getAssignedDeliveryTrips = async (employeeName) => {
           'employee',
           'location_link',
           'amended_from',
-          'status'
+          'status',
+          'custom_source_warehouse'
         ]),
         filters: JSON.stringify([
           ['employee', '=', employeeName],
@@ -1848,7 +1851,6 @@ export const getDeliveryStops = async (tripId) => {
     throw error;
   }
 };
-
 
 export const updateDeliveryTripStatus = async (tripId, status) => {
   try {

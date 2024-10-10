@@ -12,23 +12,8 @@ import { EmployeeContext } from '../context/EmployeeContext';
 import { useNavigation } from '@react-navigation/native';
 
 const EmployeeProfile = () => {
-  const { employeeDetails, setEmployeeDetails } = useContext(EmployeeContext);
-  const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
-  const navigation = useNavigation();
+  const { employeeDetails} = useContext(EmployeeContext);
 
-  // Logout handler
-  const handleLogout = () => {
-    setEmployeeDetails(null); // Clear employee details from context
-    navigation.navigate('Login'); // Navigate to the login screen
-  };
-
-  const showLogoutModal = () => {
-    setIsLogoutModalVisible(true);
-  };
-
-  const hideLogoutModal = () => {
-    setIsLogoutModalVisible(false);
-  };
 
   const renderRow = (label, value) => (
     <View style={styles.row}>
@@ -114,33 +99,6 @@ const EmployeeProfile = () => {
         {renderRow('Accommodation Type', employeeDetails.current_accommodation_type)}
       </View>
 
-      {/* Logout Button */}
-      <TouchableOpacity style={styles.logoutButton} onPress={showLogoutModal}>
-        <Text style={styles.logoutButtonText}>Logout</Text>
-      </TouchableOpacity>
-
-      {/* Logout Confirmation Modal */}
-      <Modal
-        visible={isLogoutModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={hideLogoutModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Logout</Text>
-            <Text style={styles.modalText}>Are you sure you want to logout?</Text>
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.confirmButton} onPress={handleLogout}>
-                <Text style={styles.buttonText}>Logout</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.cancelButton} onPress={hideLogoutModal}>
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 };

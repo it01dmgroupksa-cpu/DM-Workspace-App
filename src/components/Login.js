@@ -8,78 +8,84 @@ import {
   Image,
   Alert,
   Linking,
-  ScrollView, // Import ScrollView to handle overflow
+  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { login, getEmployeeDetailsByUsername } from '../../api';
 import { EmployeeContext } from '../context/EmployeeContext';
-import { EyeIcon, EyeOffIcon, UserAppIcon } from './icons'; // Import the icons
+import { EyeIcon, EyeOffIcon, UserAppIcon } from './icons';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { employeeDetails, setEmployeeDetails } = useContext(EmployeeContext);
+  const [isLoading, setIsLoading] = useState(false);
+  const { setEmployeeDetails } = useContext(EmployeeContext);
 
   const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert('Invalid Input', 'Please enter both username and password.');
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      console.log('Attempting to login with email:', email);
       const response = await login(email, password);
-      console.log('Login response:', response);
 
       if (response.message === 'Logged In') {
         const employeeDetails = await getEmployeeDetailsByUsername(email);
-        console.log('Fetched employee details:', employeeDetails);
 
         if (!employeeDetails.custom_allow_app) {
-          setEmail('');
-          setPassword('');
-          setEmployeeDetails(null);
           Alert.alert(
             'Access Denied',
-            'You are not authorized to use this app.',
+            'You are not authorized to use this app. Please contact support for assistance.',
           );
-          return;
+        } else {
+          setEmployeeDetails(employeeDetails);
+          navigation.navigate('Home', { screen: 'Attendance' });
         }
-
-        setEmployeeDetails(employeeDetails);
-        console.log('Context employeeDetails:', employeeDetails);
-        console.log('Navigating to Attendance');
-        navigation.navigate('Home', { screen: 'Attendance' });
       } else {
-        Alert.alert('Login Failed', 'Invalid email or password');
+        Alert.alert('Login Failed', 'Invalid username or password. Please try again.');
       }
     } catch (error) {
-      if (error.response) {
-        console.error('Login error response:', error.response.data);
+      console.error('Login error:', error);
+      if (error.response && error.response.data) {
+        const errorData = error.response.data;
+        if (errorData.exception === 'frappe.exceptions.AuthenticationError' ||
+            (errorData.exc && errorData.exc.includes('Invalid login credentials'))) {
+          Alert.alert('Login Failed', 'Invalid username or password. Please try again.');
+        } else {
+          Alert.alert('Login Error', 'An unexpected error occurred. Please try again later.');
+        }
       } else {
-        console.error('Login error:', error.message);
+        Alert.alert('Login Error', 'An unexpected error occurred. Please try again later.');
       }
-      Alert.alert('Login Failed', 'An error occurred during login');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleContactSupport = () => {
-    const email = 'its@dmgroupksa.com';
+    const email = 'rihal@dmgroupksa.com';
     const subject = 'Issue Signing Into DM Workspace App';
     const mailtoURL = `mailto:${email}?subject=${encodeURIComponent(subject)}`;
 
     Linking.openURL(mailtoURL).catch(err =>
-      Alert.alert('Error', 'Failed to open email client.'),
+      Alert.alert('Error', 'Failed to open email client. Please manually send an email to rihal@dmgroupksa.com'),
     );
   };
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContainer}>
       <View style={styles.container}>
-        {/* DM Logo */}
         <Image source={require('./images/dmlogo.png')} style={styles.logo} />
-        
-        <Text style={styles.welcomeText}>Login</Text>
+        <Text style={styles.welcomeText}>Welcome Back</Text>
+        <Text style={styles.subText}>Please sign in to continue</Text>
 
-        {/* Email Input */}
         <View style={styles.inputContainer}>
+          <UserAppIcon width={24} height={24} stroke="#153156" />
           <TextInput
             style={styles.input}
             placeholder="Username"
@@ -87,12 +93,17 @@ const LoginScreen = () => {
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
+            autoCapitalize="none"
+            editable={!isLoading}
           />
-          <UserAppIcon width={24} height={24} stroke="#153156" />
         </View>
 
-        {/* Password Input */}
         <View style={styles.inputContainer}>
+          {showPassword ? (
+            <EyeIcon width={24} height={24} stroke="#153156" />
+          ) : (
+            <EyeOffIcon width={24} height={24} stroke="#153156" />
+          )}
           <TextInput
             style={styles.input}
             placeholder="Password"
@@ -100,29 +111,31 @@ const LoginScreen = () => {
             secureTextEntry={!showPassword}
             value={password}
             onChangeText={setPassword}
+            editable={!isLoading}
           />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-            {showPassword ? (
-              <EyeIcon width={24} height={24} stroke="#153156" />
-            ) : (
-              <EyeOffIcon width={24} height={24} stroke="#153156" />
-            )}
+          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLoading}>
+            <Text style={[styles.showHideText, isLoading && styles.disabledText]}>
+              {showPassword ? 'Hide' : 'Show'}
+            </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Login Button */}
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-          <Text style={styles.loginButtonText}>Login</Text>
+        <TouchableOpacity
+          style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
+          onPress={handleLogin}
+          disabled={isLoading}>
+          {isLoading ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Text style={styles.loginButtonText}>Sign In</Text>
+          )}
         </TouchableOpacity>
 
-        {/* Spacer to push the contact support to the bottom */}
         <View style={styles.spacer} />
 
-        {/* Contact Support Section */}
-        <TouchableOpacity onPress={handleContactSupport}>
-          <Text style={styles.contactSupportText}>
-            Having trouble signing in? Contact{'\n'}
-            <Text style={styles.emailText}>rihal@dmgroupksa.com</Text>
+        <TouchableOpacity onPress={handleContactSupport} disabled={isLoading}>
+          <Text style={[styles.contactSupportText, isLoading && styles.disabledText]}>
+            Having trouble signing in? Contact support
           </Text>
         </TouchableOpacity>
       </View>
@@ -134,68 +147,75 @@ const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
     justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
     backgroundColor: '#FFFFFF',
   },
   container: {
-    width: '100%',
+    padding: 20,
     alignItems: 'center',
   },
   logo: {
-    width: 100,
-    height: 100,
-    marginBottom: 20,
+    width: 120,
+    height: 120,
+    marginBottom: 30,
   },
   welcomeText: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#153156',
-    marginBottom: 20,
+    marginBottom: 10,
+  },
+  subText: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 30,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 30,
-    paddingHorizontal: 10,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 10,
+    paddingHorizontal: 15,
     marginBottom: 20,
     width: '100%',
-    elevation: 2,
   },
   input: {
     flex: 1,
     height: 50,
     fontSize: 16,
     color: '#000',
+    marginLeft: 10,
+  },
+  showHideText: {
+    color: '#153156',
+    fontSize: 14,
   },
   loginButton: {
     backgroundColor: '#153156',
     paddingVertical: 15,
-    borderRadius: 30,
+    borderRadius: 10,
     width: '100%',
     alignItems: 'center',
     marginTop: 10,
-    marginBottom: 10,
-    elevation: 2,
+  },
+  loginButtonDisabled: {
+    backgroundColor: '#B0B0B0',
   },
   loginButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
   },
   contactSupportText: {
-    color: '#B0B0B0',
-    marginTop: 20,
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  emailText: {
     color: '#153156',
+    marginTop: 20,
+    fontSize: 16,
     textDecorationLine: 'underline',
   },
   spacer: {
-    flex: 1, // This will push the contact support section to the bottom
+    flex: 1,
+  },
+  disabledText: {
+    color: '#B0B0B0',
   },
 });
 

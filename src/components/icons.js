@@ -250,3 +250,18 @@ export const ClockIcon = (props) => (
     <Polyline points="12 6 12 12 16 14" />
   </Svg>
 );
+
+export const CheckCircleIcon = (props) => (
+  <Svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <Path d="M21.801 10A10 10 0 1 1 17 3.335" />
+    <Path d="m9 11 3 3L22 4" />
+  </Svg>
+);
+
+export const XCircleIcon = (props) => (
+  <Svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <Circle cx="12" cy="12" r="10" />
+    <Line x1="12" y1="8" x2="12" y2="12" />
+    <Line x1="12" y1="16" x2="12.01" y2="16" />
+  </Svg>
+);
