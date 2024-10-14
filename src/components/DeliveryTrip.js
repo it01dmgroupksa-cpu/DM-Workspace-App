@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,14 +8,19 @@ import {
   Alert,
   ScrollView,
   Linking,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import Modal from 'react-native-modal';
+import { RNCamera } from 'react-native-camera';
 import { EmployeeContext } from '../context/EmployeeContext';
 import {
   getAssignedDeliveryTrips,
   getDeliveryStops,
   updateDeliveryTripStatus,
   updateCustomDeliveredTime,
+  uploadImageToImgur,
+  updateSignedDeliveryNotes,
 } from '../../api';
 import moment from 'moment';
 
@@ -26,6 +31,12 @@ const DeliveryTrip = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [deliveredTripsModalVisible, setDeliveredTripsModalVisible] = useState(false);
   const [viewDeliveredModalVisible, setViewDeliveredModalVisible] = useState(false);
+  const [cameraVisible, setCameraVisible] = useState(false);
+  const [capturedImages, setCapturedImages] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  
+  const cameraRef = useRef(null);
 
   useEffect(() => {
     fetchDeliveryTrips();
@@ -56,18 +67,68 @@ const DeliveryTrip = () => {
     setDeliveredTripsModalVisible(true);
   };
 
+  const captureImage = useCallback(async () => {
+    if (!cameraRef.current) {
+      console.error('Camera reference is not available');
+      Alert.alert('Error', 'Camera is not ready yet.');
+      return null;
+    }
+  
+    setIsLoading(true);
+    try {
+      const options = { quality: 0.5, base64: true };
+      const data = await cameraRef.current.takePictureAsync(options);
+      return data;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const handleCaptureImage = async () => {
+    const imageData = await captureImage();
+    if (imageData) {
+      const fileName = `signed_note_${Date.now()}.jpg`;
+      setCapturedImages(prevImages => [...prevImages, { ...imageData, fileName }]);
+      setCameraVisible(false);
+    }
+  };
+
   const handleStatusUpdate = async (status) => {
     try {
+      if (status === 'Delivered') {
+        if (capturedImages.length === 0) {
+          Alert.alert('Error', 'Please capture at least one signed delivery note photo');
+          return;
+        }
+        if (capturedImages.length > 4) {
+          Alert.alert('Error', 'You can capture a maximum of 4 images');
+          return;
+        }
+      }
+
+      setIsUploading(true);
+
       await updateDeliveryTripStatus(selectedTrip.name, status);
+      
       if (status === 'Delivered') {
         const currentTime = moment().format('YYYY-MM-DD HH:mm:ss');
         await updateCustomDeliveredTime(selectedTrip.name, currentTime);
+
+        const uploadedImageUrls = await Promise.all(
+          capturedImages.map(image => uploadImageToImgur(image.base64, image.fileName))
+        );
+
+        await updateSignedDeliveryNotes(selectedTrip.name, uploadedImageUrls);
       }
+
       Alert.alert('Success', `Trip marked as ${status}`);
       setModalVisible(false);
+      setCapturedImages([]);
       fetchDeliveryTrips();
     } catch (error) {
       Alert.alert('Error', `Failed to update trip status: ${error.message}`);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -77,22 +138,23 @@ const DeliveryTrip = () => {
     }
   };
 
-  const renderTripItem = ({ item }) => (
+  const renderTripItem = ({item}) => (
     <TouchableOpacity
       style={styles.tripItem}
-      onPress={() => item.delivery_status === 'Delivered' ? handleDeliveredTripPress(item) : handleTripPress(item)}
-    >
+      onPress={() =>
+        item.delivery_status === 'Delivered'
+          ? handleDeliveredTripPress(item)
+          : handleTripPress(item)
+      }>
       <View style={styles.tripHeader}>
-        <Text style={styles.tripIcon}>{item.delivery_status === 'Delivered' ? '✅' : '🚚'}</Text>
+        <Text style={styles.tripIcon}>
+          {item.delivery_status === 'Delivered' ? '✅' : '🚚'}
+        </Text>
         <Text style={styles.tripId}>{item.name}</Text>
       </View>
       <View style={styles.tripInfo}>
-        <Text style={styles.tripInfoText}>
-          🕒 {item.departure_time}
-        </Text>
-        <Text style={styles.tripInfoText}>
-          👤 {item.driver_name}
-        </Text>
+        <Text style={styles.tripInfoText}>🕒 {item.departure_time}</Text>
+        <Text style={styles.tripInfoText}>👤 {item.driver_name}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -101,8 +163,7 @@ const DeliveryTrip = () => {
     <Modal
       isVisible={modalVisible}
       onBackdropPress={() => setModalVisible(false)}
-      style={styles.modal}
-    >
+      style={styles.modal}>
       <View style={styles.modalContent}>
         <ScrollView>
           <Text style={styles.modalTitle}>Trip Details</Text>
@@ -132,17 +193,23 @@ const DeliveryTrip = () => {
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Address:</Text>
-            <Text style={styles.detailValue}>{selectedTrip?.driver_address}</Text>
+            <Text style={styles.detailValue}>
+              {selectedTrip?.driver_address}
+            </Text>
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Number:</Text>
-            <Text style={styles.detailValue}>{selectedTrip?.custom_driver_number}</Text>
+            <Text style={styles.detailValue}>
+              {selectedTrip?.custom_driver_number}
+            </Text>
           </View>
 
           <Text style={styles.sectionTitle}>Trip Information</Text>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Status:</Text>
-            <Text style={styles.detailValue}>{selectedTrip?.delivery_status}</Text>
+            <Text style={styles.detailValue}>
+              {selectedTrip?.delivery_status}
+            </Text>
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Total Distance:</Text>
@@ -156,7 +223,9 @@ const DeliveryTrip = () => {
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Departure Time:</Text>
-            <Text style={styles.detailValue}>{selectedTrip?.departure_time}</Text>
+            <Text style={styles.detailValue}>
+              {selectedTrip?.departure_time}
+            </Text>
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Delivered Time:</Text>
@@ -165,11 +234,17 @@ const DeliveryTrip = () => {
             </Text>
           </View>
           <View style={styles.detailSection}>
+            <Text style={styles.detailLabel}>Source Warehouse:</Text>
+            <Text style={styles.detailValue}>{selectedTrip?.custom_source_warehouse}</Text>
+          </View>
+          <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Employee:</Text>
             <Text style={styles.detailValue}>{selectedTrip?.employee}</Text>
           </View>
 
-          <TouchableOpacity style={styles.linkButton} onPress={openLocationLink}>
+          <TouchableOpacity
+            style={styles.linkButton}
+            onPress={openLocationLink}>
             <Text style={styles.linkButtonText}>📍 Open Location Link</Text>
           </TouchableOpacity>
 
@@ -191,39 +266,80 @@ const DeliveryTrip = () => {
               </View>
               <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Email:</Text>
-                <Text style={styles.detailValue}>{stop.email_sent ? 'Sent' : 'Not sent'}</Text>
+                <Text style={styles.detailValue}>
+                  {stop.email_sent ? 'Sent' : 'Not sent'}
+                </Text>
               </View>
               <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Visited:</Text>
-                <Text style={styles.detailValue}>{stop.visited ? 'Yes' : 'No'}</Text>
+                <Text style={styles.detailValue}>
+                  {stop.visited ? 'Yes' : 'No'}
+                </Text>
               </View>
             </View>
           ))}
+
+<Text style={styles.sectionTitle}>Capture Signed Delivery Notes</Text>
+          <Text style={styles.captureInstructions}>
+            Please capture at least 1 and up to 4 images of signed delivery notes.
+          </Text>
+          <TouchableOpacity
+            style={styles.captureButton}
+            onPress={() => setCameraVisible(true)}
+            disabled={capturedImages.length >= 4}>
+            <Text style={styles.buttonText}>
+              {capturedImages.length >= 4 ? 'Max Images Captured' : 'Capture Photo'}
+            </Text>
+          </TouchableOpacity>
+          <View style={styles.capturedImagesContainer}>
+            {capturedImages.map((image, index) => (
+              <View key={index} style={styles.capturedImageWrapper}>
+                <Image
+                  source={{uri: image.uri}}
+                  style={styles.capturedImage}
+                />
+                <TouchableOpacity
+                  style={styles.removeImageButton}
+                  onPress={() => setCapturedImages(images => images.filter((_, i) => i !== index))}>
+                  <Text style={styles.removeImageButtonText}>X</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               style={[styles.button, styles.deliveredButton]}
               onPress={() => handleStatusUpdate('Delivered')}
-            >
-              <Text style={styles.buttonText}>✅ Delivered</Text>
+              disabled={isUploading}>
+              {isUploading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.buttonText}>✅ Delivered</Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.button, styles.partialButton]}
               onPress={() => handleStatusUpdate('Partially Delivered')}
-            >
-              <Text style={styles.buttonText}>⚠️ Partially Delivered</Text>
+              disabled={isUploading}>
+              {isUploading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.buttonText}>⚠️ Partially Delivered</Text>
+              )}
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity
             style={styles.closeButton}
-            onPress={() => setModalVisible(false)}
-          >
+            onPress={() => setModalVisible(false)}>
             <Text style={styles.buttonText}>Close</Text>
           </TouchableOpacity>
 
           {selectedTrip?.amended_from && (
-            <Text style={styles.amendedText}>Amended From: {selectedTrip.amended_from}</Text>
+            <Text style={styles.amendedText}>
+              Amended From: {selectedTrip.amended_from}
+            </Text>
           )}
         </ScrollView>
       </View>
@@ -234,8 +350,7 @@ const DeliveryTrip = () => {
     <Modal
       isVisible={deliveredTripsModalVisible}
       onBackdropPress={() => setDeliveredTripsModalVisible(false)}
-      style={styles.modal}
-    >
+      style={styles.modal}>
       <View style={styles.modalContent}>
         <ScrollView>
           <Text style={styles.modalTitle}>Delivered Trip Details</Text>
@@ -265,17 +380,23 @@ const DeliveryTrip = () => {
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Address:</Text>
-            <Text style={styles.detailValue}>{selectedTrip?.driver_address}</Text>
+            <Text style={styles.detailValue}>
+              {selectedTrip?.driver_address}
+            </Text>
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Number:</Text>
-            <Text style={styles.detailValue}>{selectedTrip?.custom_driver_number}</Text>
+            <Text style={styles.detailValue}>
+              {selectedTrip?.custom_driver_number}
+            </Text>
           </View>
 
           <Text style={styles.sectionTitle}>Trip Information</Text>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Status:</Text>
-            <Text style={styles.detailValue}>{selectedTrip?.delivery_status}</Text>
+            <Text style={styles.detailValue}>
+              {selectedTrip?.delivery_status}
+            </Text>
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Total Distance:</Text>
@@ -289,7 +410,9 @@ const DeliveryTrip = () => {
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Departure Time:</Text>
-            <Text style={styles.detailValue}>{selectedTrip?.departure_time}</Text>
+            <Text style={styles.detailValue}>
+              {selectedTrip?.departure_time}
+            </Text>
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Delivered Time:</Text>
@@ -298,11 +421,17 @@ const DeliveryTrip = () => {
             </Text>
           </View>
           <View style={styles.detailSection}>
+            <Text style={styles.detailLabel}>Source Warehouse:</Text>
+            <Text style={styles.detailValue}>{selectedTrip?.custom_source_warehouse}</Text>
+          </View>
+          <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Employee:</Text>
             <Text style={styles.detailValue}>{selectedTrip?.employee}</Text>
           </View>
 
-          <TouchableOpacity style={styles.linkButton} onPress={openLocationLink}>
+          <TouchableOpacity
+            style={styles.linkButton}
+            onPress={openLocationLink}>
             <Text style={styles.linkButtonText}>📍 Open Location Link</Text>
           </TouchableOpacity>
 
@@ -324,19 +453,22 @@ const DeliveryTrip = () => {
               </View>
               <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Email:</Text>
-                <Text style={styles.detailValue}>{stop.email_sent ? 'Sent' : 'Not sent'}</Text>
+                <Text style={styles.detailValue}>
+                  {stop.email_sent ? 'Sent' : 'Not sent'}
+                </Text>
               </View>
               <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Visited:</Text>
-                <Text style={styles.detailValue}>{stop.visited ? 'Yes' : 'No'}</Text>
+                <Text style={styles.detailValue}>
+                  {stop.visited ? 'Yes' : 'No'}
+                </Text>
               </View>
             </View>
           ))}
 
           <TouchableOpacity
             style={styles.closeButton}
-            onPress={() => setDeliveredTripsModalVisible(false)}
-          >
+            onPress={() => setDeliveredTripsModalVisible(false)}>
             <Text style={styles.buttonText}>Close</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -348,21 +480,46 @@ const DeliveryTrip = () => {
     <Modal
       isVisible={viewDeliveredModalVisible}
       onBackdropPress={() => setViewDeliveredModalVisible(false)}
-      style={styles.modal}
-    >
+      style={styles.modal}>
       <View style={styles.modalContent}>
         <Text style={styles.modalTitle}>Delivered Trips</Text>
         <FlatList
-          data={deliveryTrips.filter(trip => trip.delivery_status === 'Delivered')}
+          data={deliveryTrips.filter(
+            trip => trip.delivery_status === 'Delivered',
+          )}
           renderItem={renderTripItem}
-          keyExtractor={(item) => item.name}
+          keyExtractor={item => item.name}
           contentContainerStyle={styles.listContainer}
         />
         <TouchableOpacity
           style={styles.closeButton}
-          onPress={() => setViewDeliveredModalVisible(false)}
-        >
+          onPress={() => setViewDeliveredModalVisible(false)}>
           <Text style={styles.buttonText}>Close</Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+
+  const renderCamera = () => (
+    <Modal
+      isVisible={cameraVisible}
+      onBackdropPress={() => setCameraVisible(false)}
+      style={styles.cameraModal}>
+      <View style={styles.cameraContainer}>
+        <RNCamera
+          ref={cameraRef}
+          style={styles.camera}
+          type={RNCamera.Constants.Type.back}
+          captureAudio={false}
+          onCameraReady={() => console.log('Camera is ready')}
+        />
+        <TouchableOpacity
+          style={styles.captureButton}
+          onPress={handleCaptureImage}
+          disabled={isLoading}>
+          <Text style={styles.buttonText}>
+            {isLoading ? 'Capturing...' : 'Capture'}
+          </Text>
         </TouchableOpacity>
       </View>
     </Modal>
@@ -372,18 +529,20 @@ const DeliveryTrip = () => {
     <View style={styles.container}>
       <Text style={styles.title}>Assigned Delivery Trips</Text>
       <FlatList
-        data={deliveryTrips.filter(trip => trip.delivery_status !== 'Delivered')}
+        data={deliveryTrips.filter(
+          trip => trip.delivery_status !== 'Delivered',
+        )}
         renderItem={renderTripItem}
-        keyExtractor={(item) => item.name}
+        keyExtractor={item => item.name}
         contentContainerStyle={styles.listContainer}
       />
       <TouchableOpacity
         style={styles.viewDeliveredButton}
-        onPress={() => setViewDeliveredModalVisible(true)}
-      >
+        onPress={() => setViewDeliveredModalVisible(true)}>
         <Text style={styles.viewDeliveredButtonText}>View Delivered Trips</Text>
       </TouchableOpacity>
       {renderTripDetails()}
+      {renderCamera()}
       {renderDeliveredTripDetails()}
       {renderViewDeliveredTrips()}
     </View>
@@ -412,7 +571,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
@@ -553,6 +712,62 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  cameraModal: {
+    margin: 0,
+    justifyContent: 'flex-end',
+  },
+  cameraContainer: {
+    backgroundColor: 'black',
+    height: '100%',
+    width: '100%',
+  },
+  camera: {
+    flex: 1,
+  },
+  captureButton: {
+    backgroundColor: '#4CAF50',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    margin: 20,
+  },
+  capturedImagesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  capturedImageWrapper: {
+    position: 'relative',
+    margin: 5,
+  },
+  capturedImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -10,
+    right: -10,
+    backgroundColor: 'red',
+    borderRadius: 15,
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeImageButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  captureInstructions: {
+    fontSize: 14,
+    color: '#4A4A4A',
+    marginBottom: 10,
+    textAlign: 'center',
   },
 });
 

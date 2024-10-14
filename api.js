@@ -1852,6 +1852,25 @@ export const getDeliveryStops = async (tripId) => {
   }
 };
 
+export const updateSignedDeliveryNotes = async (tripId, imageUrls) => {
+  try {
+    const response = await api.put('/frappe.client.set_value', {
+      doctype: 'Delivery Trip',
+      name: tripId,
+      fieldname: {
+        custom_signed_delivery_note: imageUrls[0] || '',
+        custom_attach_2: imageUrls[1] || '',
+        custom_attach_3: imageUrls[2] || '',
+        custom_attach_4: imageUrls[3] || '',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error updating signed delivery notes:', error.response ? error.response.data : error.message);
+    throw error;
+  }
+};
+
 export const updateDeliveryTripStatus = async (tripId, status) => {
   try {
     const response = await api.put('/frappe.client.set_value', {
