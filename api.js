@@ -140,7 +140,10 @@ export const getEmployeeDetailsByUsername = async username => {
         'Content-Type': 'application/json',
       },
     });
+
+    console.log('employee details:', response.data.message);
     return response.data.message;
+    
   } catch (error) {
     throw error;
   }
@@ -214,11 +217,12 @@ export const checkOut = async (employeeID, location, deviceID, imageLink) => {
 };
 
 export const hasCheckedInToday = async employeeID => {
-  const todayStart = moment().startOf('day').format('YYYY-MM-DD HH:mm:ss');
-  const todayEnd = moment().endOf('day').format('YYYY-MM-DD HH:mm:ss');
+  const todayStart = moment().startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
+  const tomorrowStart = moment().add(1, 'day').startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
 
-  console.log('todayStart', todayStart)
-  console.log('todayEnd',todayEnd)
+  console.log('todayStart', todayStart);
+  console.log('tomorrowStart', tomorrowStart);
+
   try {
     const response = await api.get('/frappe.client.get_list', {
       params: {
@@ -228,7 +232,7 @@ export const hasCheckedInToday = async employeeID => {
           ['employee', '=', employeeID],
           ['log_type', '=', 'IN'],
           ['time', '>=', todayStart],
-          ['time', '<=', todayEnd],
+          ['time', '<', tomorrowStart],
           ['custom_attendance_device', '=', 'Mobile Device']
         ]),
       },
@@ -238,7 +242,7 @@ export const hasCheckedInToday = async employeeID => {
     });
 
     const checkIns = response.data.message;
-    console.log('hasCheckedInToday', checkIns.length); // Log the number of check-ins for today
+    console.log('hasCheckedInToday', checkIns.length);
 
     return checkIns.length > 0;
   } catch (error) {
@@ -247,8 +251,11 @@ export const hasCheckedInToday = async employeeID => {
 };
 
 export const hasCheckedOutToday = async employeeID => {
-  const todayStart = moment().startOf('day').format('YYYY-MM-DD HH:mm:ss');
-  const todayEnd = moment().endOf('day').format('YYYY-MM-DD HH:mm:ss');
+  const todayStart = moment().startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
+  const tomorrowStart = moment().add(1, 'day').startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
+
+  console.log('todayStart', todayStart);
+  console.log('tomorrowStart', tomorrowStart);
 
   try {
     const response = await api.get('/frappe.client.get_list', {
@@ -259,7 +266,7 @@ export const hasCheckedOutToday = async employeeID => {
           ['employee', '=', employeeID],
           ['log_type', '=', 'OUT'],
           ['time', '>=', todayStart],
-          ['time', '<=', todayEnd],
+          ['time', '<', tomorrowStart],
           ['custom_attendance_device', '=', 'Mobile Device']
         ]),
       },
@@ -268,16 +275,14 @@ export const hasCheckedOutToday = async employeeID => {
       },
     });
 
-    // Check the length of response.data.message
     const checkOuts = response.data.message;
-    console.log('hasCheckedOutToday', checkOuts.length); // Log the number of check-outs for today
+    console.log('hasCheckedOutToday', checkOuts.length);
 
     return checkOuts.length > 0;
   } catch (error) {
     throw error;
   }
 };
-
 
 export const uploadImageToImgur = async (base64Image, fileName) => {
   const IMGUR_CLIENT_ID = '96c24c758d8b494';

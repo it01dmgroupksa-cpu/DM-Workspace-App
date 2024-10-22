@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useContext,
+  useRef,
+  useCallback,
+} from 'react';
 import {
   View,
   Text,
@@ -12,8 +18,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Modal from 'react-native-modal';
-import { RNCamera } from 'react-native-camera';
-import { EmployeeContext } from '../context/EmployeeContext';
+import {RNCamera} from 'react-native-camera';
+import {EmployeeContext} from '../context/EmployeeContext';
 import {
   getAssignedDeliveryTrips,
   getDeliveryStops,
@@ -25,17 +31,19 @@ import {
 import moment from 'moment';
 
 const DeliveryTrip = () => {
-  const { employeeDetails } = useContext(EmployeeContext);
+  const {employeeDetails} = useContext(EmployeeContext);
   const [deliveryTrips, setDeliveryTrips] = useState([]);
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [deliveredTripsModalVisible, setDeliveredTripsModalVisible] = useState(false);
-  const [viewDeliveredModalVisible, setViewDeliveredModalVisible] = useState(false);
+  const [deliveredTripsModalVisible, setDeliveredTripsModalVisible] =
+    useState(false);
+  const [viewDeliveredModalVisible, setViewDeliveredModalVisible] =
+    useState(false);
   const [cameraVisible, setCameraVisible] = useState(false);
   const [capturedImages, setCapturedImages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  
+
   const cameraRef = useRef(null);
 
   useEffect(() => {
@@ -46,10 +54,10 @@ const DeliveryTrip = () => {
     try {
       const trips = await getAssignedDeliveryTrips(employeeDetails.name);
       const tripsWithStops = await Promise.all(
-        trips.map(async (trip) => {
+        trips.map(async trip => {
           const stops = await getDeliveryStops(trip.name);
-          return { ...trip, delivery_stops: stops };
-        })
+          return {...trip, delivery_stops: stops};
+        }),
       );
       setDeliveryTrips(tripsWithStops);
     } catch (error) {
@@ -57,12 +65,12 @@ const DeliveryTrip = () => {
     }
   };
 
-  const handleTripPress = (trip) => {
+  const handleTripPress = trip => {
     setSelectedTrip(trip);
     setModalVisible(true);
   };
 
-  const handleDeliveredTripPress = (trip) => {
+  const handleDeliveredTripPress = trip => {
     setSelectedTrip(trip);
     setDeliveredTripsModalVisible(true);
   };
@@ -73,10 +81,10 @@ const DeliveryTrip = () => {
       Alert.alert('Error', 'Camera is not ready yet.');
       return null;
     }
-  
+
     setIsLoading(true);
     try {
-      const options = { quality: 0.5, base64: true };
+      const options = {quality: 0.5, base64: true};
       const data = await cameraRef.current.takePictureAsync(options);
       return data;
     } finally {
@@ -88,16 +96,22 @@ const DeliveryTrip = () => {
     const imageData = await captureImage();
     if (imageData) {
       const fileName = `signed_note_${Date.now()}.jpg`;
-      setCapturedImages(prevImages => [...prevImages, { ...imageData, fileName }]);
+      setCapturedImages(prevImages => [
+        ...prevImages,
+        {...imageData, fileName},
+      ]);
       setCameraVisible(false);
     }
   };
 
-  const handleStatusUpdate = async (status) => {
+  const handleStatusUpdate = async status => {
     try {
       if (status === 'Delivered') {
         if (capturedImages.length === 0) {
-          Alert.alert('Error', 'Please capture at least one signed delivery note photo');
+          Alert.alert(
+            'Error',
+            'Please capture at least one signed delivery note photo',
+          );
           return;
         }
         if (capturedImages.length > 4) {
@@ -109,13 +123,15 @@ const DeliveryTrip = () => {
       setIsUploading(true);
 
       await updateDeliveryTripStatus(selectedTrip.name, status);
-      
+
       if (status === 'Delivered') {
         const currentTime = moment().format('YYYY-MM-DD HH:mm:ss');
         await updateCustomDeliveredTime(selectedTrip.name, currentTime);
 
         const uploadedImageUrls = await Promise.all(
-          capturedImages.map(image => uploadImageToImgur(image.base64, image.fileName))
+          capturedImages.map(image =>
+            uploadImageToImgur(image.base64, image.fileName),
+          ),
         );
 
         await updateSignedDeliveryNotes(selectedTrip.name, uploadedImageUrls);
@@ -235,7 +251,9 @@ const DeliveryTrip = () => {
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Source Warehouse:</Text>
-            <Text style={styles.detailValue}>{selectedTrip?.custom_source_warehouse}</Text>
+            <Text style={styles.detailValue}>
+              {selectedTrip?.custom_source_warehouse}
+            </Text>
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Employee:</Text>
@@ -257,12 +275,18 @@ const DeliveryTrip = () => {
                 <Text style={styles.detailValue}>{stop.customer}</Text>
               </View>
               <View style={styles.detailSection}>
+                <Text style={styles.detailLabel}>Delivery Note:</Text>
+                <Text style={styles.detailValue}>{stop.delivery_note}</Text>
+              </View>
+              <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Address:</Text>
-                <Text style={styles.detailValue}>{stop.address_name}</Text>
+                <Text style={styles.detailValue}>
+                  {stop.customer_address.replace(/<br>/g, '\n')}
+                </Text>
               </View>
               <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Contact:</Text>
-                <Text style={styles.detailValue}>{stop.contact}</Text>
+                <Text style={styles.detailValue}>{stop.customer_contact}</Text>
               </View>
               <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Email:</Text>
@@ -279,28 +303,32 @@ const DeliveryTrip = () => {
             </View>
           ))}
 
-<Text style={styles.sectionTitle}>Capture Signed Delivery Notes</Text>
+          <Text style={styles.sectionTitle}>Capture Signed Delivery Notes</Text>
           <Text style={styles.captureInstructions}>
-            Please capture at least 1 and up to 4 images of signed delivery notes.
+            Please capture at least 1 and up to 4 images of signed delivery
+            notes.
           </Text>
           <TouchableOpacity
             style={styles.captureButton}
             onPress={() => setCameraVisible(true)}
             disabled={capturedImages.length >= 4}>
             <Text style={styles.buttonText}>
-              {capturedImages.length >= 4 ? 'Max Images Captured' : 'Capture Photo'}
+              {capturedImages.length >= 4
+                ? 'Max Images Captured'
+                : 'Capture Photo'}
             </Text>
           </TouchableOpacity>
           <View style={styles.capturedImagesContainer}>
             {capturedImages.map((image, index) => (
               <View key={index} style={styles.capturedImageWrapper}>
-                <Image
-                  source={{uri: image.uri}}
-                  style={styles.capturedImage}
-                />
+                <Image source={{uri: image.uri}} style={styles.capturedImage} />
                 <TouchableOpacity
                   style={styles.removeImageButton}
-                  onPress={() => setCapturedImages(images => images.filter((_, i) => i !== index))}>
+                  onPress={() =>
+                    setCapturedImages(images =>
+                      images.filter((_, i) => i !== index),
+                    )
+                  }>
                   <Text style={styles.removeImageButtonText}>X</Text>
                 </TouchableOpacity>
               </View>
@@ -422,7 +450,9 @@ const DeliveryTrip = () => {
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Source Warehouse:</Text>
-            <Text style={styles.detailValue}>{selectedTrip?.custom_source_warehouse}</Text>
+            <Text style={styles.detailValue}>
+              {selectedTrip?.custom_source_warehouse}
+            </Text>
           </View>
           <View style={styles.detailSection}>
             <Text style={styles.detailLabel}>Employee:</Text>
@@ -444,12 +474,18 @@ const DeliveryTrip = () => {
                 <Text style={styles.detailValue}>{stop.customer}</Text>
               </View>
               <View style={styles.detailSection}>
+                <Text style={styles.detailLabel}>Delivery Note:</Text>
+                <Text style={styles.detailValue}>{stop.delivery_note}</Text>
+              </View>
+              <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Address:</Text>
-                <Text style={styles.detailValue}>{stop.address_name}</Text>
+                <Text style={styles.detailValue}>
+                  {stop.customer_address.replace(/<br>/g, '\n')}
+                </Text>
               </View>
               <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Contact:</Text>
-                <Text style={styles.detailValue}>{stop.contact}</Text>
+                <Text style={styles.detailValue}>{stop.customer_contact}</Text>
               </View>
               <View style={styles.detailSection}>
                 <Text style={styles.detailLabel}>Email:</Text>

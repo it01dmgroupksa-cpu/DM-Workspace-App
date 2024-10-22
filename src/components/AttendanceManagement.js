@@ -44,7 +44,6 @@ import {
 import moment from 'moment';
 import { CommonActions } from '@react-navigation/native';
 
-
 const AttendanceManagement = () => {
   const {employeeDetails, setEmployeeDetails} = useContext(EmployeeContext);
   const [location, setLocation] = useState(null);
@@ -69,6 +68,9 @@ const AttendanceManagement = () => {
   const locationUpdateTimeRef = useRef(null);
   const cameraRef = useRef(null);
   const navigation = useNavigation();
+  const [locationError, setLocationError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRY_ATTEMPTS = 3;
 
   useEffect(() => {
     requestLocationPermission();
@@ -171,6 +173,7 @@ const AttendanceManagement = () => {
   const getLocation = useCallback(() => {
     console.log('Getting location...');
     setLocationStatus('detecting');
+    setLocationError(null);
 
     if (branchLocations.length === 0) {
       console.log('Waiting for branch locations...');
@@ -187,10 +190,12 @@ const AttendanceManagement = () => {
         if (isNaN(latitude) || isNaN(longitude)) {
           console.error('Invalid coordinates received');
           setLocationStatus('error');
+          setLocationError('Invalid coordinates received');
           return;
         }
 
         setLocation({latitude, longitude});
+        setRetryCount(0);
         setLocationDetectionAttempts(0);
         setIsDetectingLocation(false);
 
@@ -199,14 +204,19 @@ const AttendanceManagement = () => {
       error => {
         console.error('Location error:', error);
         setLocationStatus('error');
+        setLocationError(error.message || 'Unknown error occurred');
         setLocationDetectionAttempts(prev => prev + 1);
-        if (locationDetectionAttempts >= 3) {
+        
+        if (retryCount < MAX_RETRY_ATTEMPTS) {
+          setRetryCount(prevCount => prevCount + 1);
+          setTimeout(getLocation, 5000); // Retry after 5 seconds
+        } else {
+          setIsDetectingLocation(false);
           setStatusMessage(
-            'Unable to detect your location. Please check your GPS settings.',
+            'Unable to detect your location. Please check your GPS settings and try again.',
           );
           setIsStatusSuccess(false);
           setShowStatusModal(true);
-          setIsDetectingLocation(false);
         }
       },
       {
@@ -215,7 +225,20 @@ const AttendanceManagement = () => {
         maximumAge: 10000,
       },
     );
-  }, [branchLocations, locationDetectionAttempts, updateDistanceToOffice]);
+  }, [branchLocations, retryCount, updateDistanceToOffice]);
+
+  useEffect(() => {
+    if (isDetectingLocation && branchLocations.length > 0) {
+      getLocation();
+    }
+  }, [isDetectingLocation, branchLocations, getLocation]);
+
+  const handleRetryLocation = () => {
+    setRetryCount(0);
+    setLocationDetectionAttempts(0);
+    setIsDetectingLocation(true);
+    getLocation();
+  };
 
   const updateDistanceToOffice = useCallback(
     currentLocation => {
@@ -722,44 +745,49 @@ const AttendanceManagement = () => {
           </TouchableOpacity>
 
           <View style={styles.statusSection}>
-            <View style={styles.statusCard}>
-              <LocationIcon
-                width={24}
-                height={24}
-                color="#153156"
-                style={styles.statusIcon}
-              />
-              <View>
-                <Text style={styles.statusLabel}>Location Status</Text>
-                <Text
-                  style={[
-                    styles.statusText,
-                    locationStatus === 'error' && styles.errorText,
-                  ]}>
-                  {(() => {
-                    if (branchLocations.length === 0) {
-                      return 'Loading office locations...';
-                    }
-                    switch (locationStatus) {
-                      case 'detecting':
-                        return 'Detecting location...';
-                      case 'calculating':
-                        return 'Calculating distance...';
-                      case 'ready':
-                        return distanceToOffice !== null
-                          ? `${(distanceToOffice - 0.05).toFixed(
-                              2,
-                            )} km from office`
-                          : 'Distance calculation complete';
-                      case 'error':
-                        return 'Error calculating distance';
-                      default:
-                        return 'Initializing...';
-                    }
-                  })()}
-                </Text>
-              </View>
-            </View>
+          <View style={styles.statusCard}>
+          <LocationIcon
+            width={24}
+            height={24}
+            color="#153156"
+            style={styles.statusIcon}
+          />
+          <View>
+            <Text style={styles.statusLabel}>Location Status</Text>
+            <Text
+              style={[
+                styles.statusText,
+                locationStatus === 'error' && styles.errorText,
+              ]}>
+              {(() => {
+                if (branchLocations.length === 0) {
+                  return 'Loading office locations...';
+                }
+                switch (locationStatus) {
+                  case 'detecting':
+                    return 'Detecting location...';
+                  case 'calculating':
+                    return 'Calculating distance...';
+                  case 'ready':
+                    return distanceToOffice !== null
+                      ? `${(distanceToOffice - 0.05).toFixed(2)} km from office`
+                      : 'Distance calculation complete';
+                  case 'error':
+                    return locationError || 'Error calculating distance';
+                  default:
+                    return 'Initializing...';
+                }
+              })()}
+            </Text>
+            {locationStatus === 'error' && (
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={handleRetryLocation}>
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
             <View style={styles.statusCard}>
               <WifiIcon
                 width={24}
@@ -1130,6 +1158,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     width: '45%',
     alignItems: 'center',
+  },
+  retryButton: {
+    backgroundColor: '#153156',
+    padding: 8,
+    borderRadius: 5,
+    marginTop: 10,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });
 
