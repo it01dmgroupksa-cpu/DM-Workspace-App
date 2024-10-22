@@ -18,6 +18,7 @@ import {
   PermissionsAndroid,
   Platform,
 } from 'react-native';
+import {Picker} from '@react-native-picker/picker';
 import {RNCamera} from 'react-native-camera';
 import Geolocation from '@react-native-community/geolocation';
 import NetInfo from '@react-native-community/netinfo';
@@ -65,6 +66,7 @@ const AttendanceManagement = () => {
   const [isBranchLocationsReady, setIsBranchLocationsReady] = useState(false);
   const [locationStatus, setLocationStatus] = useState('detecting');
   const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
+  const [selectedTimeCategory, setSelectedTimeCategory] = useState('Regular Time');
   const locationUpdateTimeRef = useRef(null);
   const cameraRef = useRef(null);
   const navigation = useNavigation();
@@ -370,33 +372,58 @@ const AttendanceManagement = () => {
     return distanceToAssignedBranch <= 0.05;
   };
 
+  const TimeCategorySelector = () => {
+    if (!employeeDetails?.is_eligible) {
+      return null;
+    }
+  
+    return (
+      <View style={timeCategoryStyles.container}>
+        <Text style={timeCategoryStyles.label}>Time Category</Text>
+        <Picker
+          selectedValue={selectedTimeCategory}
+          onValueChange={(itemValue) => setSelectedTimeCategory(itemValue)}
+          style={timeCategoryStyles.selector}>
+          <Picker.Item 
+            label="Regular Time" 
+            value="Regular Time" 
+            style={timeCategoryStyles.pickerItem}
+          />
+          <Picker.Item 
+            label="Over Time" 
+            value="Over Time" 
+            style={timeCategoryStyles.pickerItem}
+          />
+        </Picker>
+      </View>
+    );
+  };
+
   const handleConfirmAttendance = async () => {
     setIsSubmitting(true);
     setShowConfirmModal(false);
     try {
       const deviceID = employeeDetails?.custom_job_location || 'Mobile Device';
       let imageLink = null;
-
+  
       if (capturedImage) {
         imageLink = await uploadImageToImgur(
           capturedImage.base64,
           capturedImage.fileName,
         );
       }
-
+  
       if (attendanceType === 'checkIn') {
-        await checkIn(employeeDetails?.name, location, deviceID, imageLink);
+        await checkIn(employeeDetails?.name, location, deviceID, imageLink, selectedTimeCategory);
       } else {
-        await checkOut(employeeDetails?.name, location, deviceID, imageLink);
+        await checkOut(employeeDetails?.name, location, deviceID, imageLink, selectedTimeCategory);
       }
-
+  
       setCapturedImage(null);
       setAttendanceType(null);
-
+  
       setStatusMessage(
-        `${
-          attendanceType === 'checkIn' ? 'Check-in' : 'Check-out'
-        } successful!`,
+        `${attendanceType === 'checkIn' ? 'Check-in' : 'Check-out'} successful for ${selectedTimeCategory.toLowerCase()}!`,
       );
       setIsStatusSuccess(true);
       setShowStatusModal(true);
@@ -440,14 +467,14 @@ const AttendanceManagement = () => {
       try {
         const hasChecked =
           type === 'checkIn'
-            ? await hasCheckedInToday(employeeDetails?.name)
-            : await hasCheckedOutToday(employeeDetails?.name);
-
+            ? await hasCheckedInToday(employeeDetails?.name, selectedTimeCategory)
+            : await hasCheckedOutToday(employeeDetails?.name, selectedTimeCategory);
+  
         if (hasChecked) {
           setStatusMessage(
             `You have already ${
               type === 'checkIn' ? 'checked in' : 'checked out'
-            } today.`,
+            } for ${selectedTimeCategory.toLowerCase()} today.`,
           );
           setIsStatusSuccess(true);
           setShowStatusModal(true);
@@ -490,8 +517,8 @@ const AttendanceManagement = () => {
         const currentTime = moment().format('YYYY-MM-DD_HH-mm-ss');
         const fileName = `${employeeDetails?.name}_${
           type === 'checkIn' ? 'CheckIn' : 'CheckOut'
-        }_${currentTime}.jpg`;
-
+        }_${selectedTimeCategory}_${currentTime}.jpg`;
+  
         let imageData = null;
         if (employeeDetails?.custom_capture_selfie) {
           imageData = await captureImage();
@@ -502,7 +529,7 @@ const AttendanceManagement = () => {
             });
           }
         }
-
+  
         setAttendanceType(type);
         setShowConfirmModal(true);
       } catch (error) {
@@ -529,6 +556,7 @@ const AttendanceManagement = () => {
       captureImage,
       canCheckInOrOut,
       distanceToOffice,
+      selectedTimeCategory,
     ],
   );
 
@@ -713,6 +741,7 @@ const AttendanceManagement = () => {
                 </Text>
               </View>
             )}
+          <TimeCategorySelector />
           <TouchableOpacity
             style={[
               styles.button,
@@ -1169,6 +1198,47 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+ 
+});
+
+const timeCategoryStyles = StyleSheet.create({
+  container: {
+    width: '100%',
+    marginBottom: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 15,
+    elevation: 2,
+  },
+  labelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  labelIcon: {
+    marginRight: 10,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#153156',
+  },
+  pickerContainer: {
+    backgroundColor: '#E6EAF0',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  picker: {
+    height: 50,
+    width: '100%',
+    color: '#153156',
+    fontWeight: '500',
+  },
+  pickerItem: {
+    fontSize: 16,
+    color: '#153156',
+    fontWeight: '500',
   },
 });
 

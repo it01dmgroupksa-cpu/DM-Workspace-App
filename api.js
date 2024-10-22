@@ -149,7 +149,7 @@ export const getEmployeeDetailsByUsername = async username => {
   }
 };
 
-export const checkIn = async (employeeID, location, deviceID, imageLink) => {
+export const checkIn = async (employeeID, location, deviceID, imageLink, timeCategory = 'Regular Time') => {
   const currentTime = moment().format('YYYY-MM-DD HH:mm:ss');
   console.log('latitude', location.latitude)
   console.log('longitude', location.longitude)
@@ -168,6 +168,7 @@ export const checkIn = async (employeeID, location, deviceID, imageLink) => {
           device_id: deviceID,
           custom_attendance_device: 'Mobile Device',
           image: imageLink,
+          custom_time_category: timeCategory,
         },
       },
       {
@@ -184,7 +185,7 @@ export const checkIn = async (employeeID, location, deviceID, imageLink) => {
   }
 };
 
-export const checkOut = async (employeeID, location, deviceID, imageLink) => {
+export const checkOut = async (employeeID, location, deviceID, imageLink, timeCategory = 'Regular Time') => {
   const currentTime = moment().format('YYYY-MM-DD HH:mm:ss');
 
   try {
@@ -202,6 +203,7 @@ export const checkOut = async (employeeID, location, deviceID, imageLink) => {
           device_id: deviceID,
           custom_attendance_device: 'Mobile Device',
           image: imageLink,
+          custom_time_category: timeCategory,
         },
       },
       {
@@ -216,7 +218,7 @@ export const checkOut = async (employeeID, location, deviceID, imageLink) => {
   }
 };
 
-export const hasCheckedInToday = async employeeID => {
+export const hasCheckedInToday = async (employeeID, timeCategory = 'Regular Time') => {
   const todayStart = moment().startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
   const tomorrowStart = moment().add(1, 'day').startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
 
@@ -233,7 +235,8 @@ export const hasCheckedInToday = async employeeID => {
           ['log_type', '=', 'IN'],
           ['time', '>=', todayStart],
           ['time', '<', tomorrowStart],
-          ['custom_attendance_device', '=', 'Mobile Device']
+          ['custom_attendance_device', '=', 'Mobile Device'],
+          ['custom_time_category', '=', timeCategory]
         ]),
       },
       headers: {
@@ -250,7 +253,7 @@ export const hasCheckedInToday = async employeeID => {
   }
 };
 
-export const hasCheckedOutToday = async employeeID => {
+export const hasCheckedOutToday = async (employeeID, timeCategory = 'Regular Time') => {
   const todayStart = moment().startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
   const tomorrowStart = moment().add(1, 'day').startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
 
@@ -267,7 +270,8 @@ export const hasCheckedOutToday = async employeeID => {
           ['log_type', '=', 'OUT'],
           ['time', '>=', todayStart],
           ['time', '<', tomorrowStart],
-          ['custom_attendance_device', '=', 'Mobile Device']
+          ['custom_attendance_device', '=', 'Mobile Device'],
+          ['custom_time_category', '=', timeCategory]
         ]),
       },
       headers: {
@@ -283,7 +287,6 @@ export const hasCheckedOutToday = async employeeID => {
     throw error;
   }
 };
-
 export const uploadImageToImgur = async (base64Image, fileName) => {
   const IMGUR_CLIENT_ID = '96c24c758d8b494';
 
