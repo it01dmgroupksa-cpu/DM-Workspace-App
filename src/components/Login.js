@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, {useState, useContext} from 'react';
 import {
   View,
   Text,
@@ -11,10 +11,11 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { login, getEmployeeDetailsByUsername } from '../../api';
-import { EmployeeContext } from '../context/EmployeeContext';
-import { EyeIcon, EyeOffIcon, UserAppIcon } from './icons';
+import {useNavigation} from '@react-navigation/native';
+import {login, getEmployeeDetailsByUsername, getEmployeeShiftDetails} from '../../api';
+import {EmployeeContext} from '../context/EmployeeContext';
+import {EyeIcon, EyeOffIcon, UserAppIcon} from './icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
@@ -22,50 +23,90 @@ const LoginScreen = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { setEmployeeDetails } = useContext(EmployeeContext);
+  const {setEmployeeDetails} = useContext(EmployeeContext);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Invalid Input', 'Please enter both username and password.');
-      return;
-    }
+const handleLogin = async () => {
+  if (!email || !password) {
+    Alert.alert('Invalid Input', 'Please enter both username and password.');
+    return;
+  }
 
-    setIsLoading(true);
-    try {
-      const response = await login(email, password);
+  setIsLoading(true);
+  try {
+    const response = await login(email, password);
 
-      if (response.message === 'Logged In') {
-        const employeeDetails = await getEmployeeDetailsByUsername(email);
+    if (response.message === 'Logged In') {
+      const employeeDetails = await getEmployeeDetailsByUsername(email);
 
-        if (!employeeDetails.custom_allow_app) {
-          Alert.alert(
-            'Access Denied',
-            'You are not authorized to use this app. Please contact support for assistance.',
+      if (!employeeDetails.custom_allow_app) {
+        Alert.alert(
+          'Access Denied',
+          'You are not authorized to use this app. Please contact support for assistance.',
+        );
+      } else {
+        const shiftDetailsResponse = await getEmployeeShiftDetails(email);
+
+        if (shiftDetailsResponse && shiftDetailsResponse.custom_shift_details) {
+          const shiftDetails = shiftDetailsResponse.custom_shift_details.map(
+            ({ break_hrs, shift_type, shift_start, shift_end }) => ({
+              break_hrs,
+              shift_type,
+              shift_start,
+              shift_end,
+            }),
           );
+
+          console.log('Shift Details:', shiftDetails);
+
+          // Save shift details in async storage
+          await AsyncStorage.setItem(
+            'shiftDetails',
+            JSON.stringify(shiftDetails),
+          );
+
+          console.log('Shift details saved to async storage');
         } else {
-          setEmployeeDetails(employeeDetails);
-          navigation.navigate('Home', { screen: 'Attendance' });
+          console.log('No Shift Details Found');
         }
-      } else {
-        Alert.alert('Login Failed', 'Invalid username or password. Please try again.');
+
+        setEmployeeDetails(employeeDetails);
+        navigation.navigate('Home', { screen: 'Attendance' });
       }
-    } catch (error) {
-      console.error('Login error:', error);
-      if (error.response && error.response.data) {
-        const errorData = error.response.data;
-        if (errorData.exception === 'frappe.exceptions.AuthenticationError' ||
-            (errorData.exc && errorData.exc.includes('Invalid login credentials'))) {
-          Alert.alert('Login Failed', 'Invalid username or password. Please try again.');
-        } else {
-          Alert.alert('Login Error', 'An unexpected error occurred. Please try again later.');
-        }
-      } else {
-        Alert.alert('Login Error', 'An unexpected error occurred. Please try again later.');
-      }
-    } finally {
-      setIsLoading(false);
+    } else {
+      Alert.alert(
+        'Login Failed',
+        'Invalid username or password. Please try again.',
+      );
     }
-  };
+  } catch (error) {
+    console.error('Login error:', error);
+    if (error.response && error.response.data) {
+      const errorData = error.response.data;
+      if (
+        errorData.exception === 'frappe.exceptions.AuthenticationError' ||
+        (errorData.exc && errorData.exc.includes('Invalid login credentials'))
+      ) {
+        Alert.alert(
+          'Login Failed',
+          'Invalid username or password. Please try again.',
+        );
+      } else {
+        Alert.alert(
+          'Login Error',
+          'An unexpected error occurred. Please try again later.',
+        );
+      }
+    } else {
+      Alert.alert(
+        'Login Error',
+        'An unexpected error occurred. Please try again later.',
+      );
+    }
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   const handleContactSupport = () => {
     const email = 'rihal@dmgroupksa.com';
@@ -73,7 +114,10 @@ const LoginScreen = () => {
     const mailtoURL = `mailto:${email}?subject=${encodeURIComponent(subject)}`;
 
     Linking.openURL(mailtoURL).catch(err =>
-      Alert.alert('Error', 'Failed to open email client. Please manually send an email to rihal@dmgroupksa.com'),
+      Alert.alert(
+        'Error',
+        'Failed to open email client. Please manually send an email to rihal@dmgroupksa.com',
+      ),
     );
   };
 
@@ -113,8 +157,11 @@ const LoginScreen = () => {
             onChangeText={setPassword}
             editable={!isLoading}
           />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLoading}>
-            <Text style={[styles.showHideText, isLoading && styles.disabledText]}>
+          <TouchableOpacity
+            onPress={() => setShowPassword(!showPassword)}
+            disabled={isLoading}>
+            <Text
+              style={[styles.showHideText, isLoading && styles.disabledText]}>
               {showPassword ? 'Hide' : 'Show'}
             </Text>
           </TouchableOpacity>
@@ -134,7 +181,11 @@ const LoginScreen = () => {
         <View style={styles.spacer} />
 
         <TouchableOpacity onPress={handleContactSupport} disabled={isLoading}>
-          <Text style={[styles.contactSupportText, isLoading && styles.disabledText]}>
+          <Text
+            style={[
+              styles.contactSupportText,
+              isLoading && styles.disabledText,
+            ]}>
             Having trouble signing in? Contact support
           </Text>
         </TouchableOpacity>

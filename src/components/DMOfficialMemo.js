@@ -136,6 +136,11 @@ const DMOfficialMemo = () => {
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
+          {/* Circular Close Button */}
+          <TouchableOpacity style={styles.closeIconCircle} onPress={handleCloseModal}>
+            <Text style={styles.closeIconText}>close</Text>
+          </TouchableOpacity>
+          
           <ScrollView contentContainerStyle={styles.modalScrollContainer}>
             <Text style={styles.modalTitle}>Memo Details</Text>
             {selectedMemo && (
@@ -170,14 +175,14 @@ const DMOfficialMemo = () => {
                 </View>
               </View>
             )}
-
+  
             <Text style={styles.sectionTitle}>Memo Content</Text>
             {selectedMemo && (
               <View style={[styles.memoContentContainer]}>
                 {renderHtmlContent(selectedMemo.memo_details)}
               </View>
             )}
-
+  
             {selectedMemo && selectedMemo.memo_end && (
               <>
                 <Text style={styles.sectionTitle}>Memo End</Text>
@@ -186,7 +191,7 @@ const DMOfficialMemo = () => {
                 </View>
               </>
             )}
-
+  
             <TouchableOpacity style={styles.closeButton} onPress={handleCloseModal}>
               <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
@@ -194,7 +199,7 @@ const DMOfficialMemo = () => {
         </View>
       </View>
     </Modal>
-  );
+  );  
 
   if (isLoading) {
     return (
@@ -393,6 +398,28 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  closeIconCircle: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 10,
+    backgroundColor: '#153156',
+    borderRadius: 25, // Makes it circular
+    width: 45,
+    height: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5, // Adds shadow for Android
+    shadowColor: '#000', // Adds shadow for iOS
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  closeIconText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
 });
 

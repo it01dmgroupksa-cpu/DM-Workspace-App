@@ -104,6 +104,7 @@ const SalesOutstandingReport = () => {
   const { employeeDetails } = useContext(EmployeeContext);
   const [salesPersonName, setSalesPersonName] = useState('');
   const [invoices, setInvoices] = useState([]);
+  const [totalOutstanding, setTotalOutstanding] = useState(0); 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -133,12 +134,18 @@ const SalesOutstandingReport = () => {
     try {
       const data = await getUnpaidOverdueInvoices(salesPerson);
       setInvoices(data);
+      calculateTotalOutstanding(data);
       setCurrentPage(1);
     } catch (error) {
       console.error('Error fetching invoices:', error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const calculateTotalOutstanding = (invoices) => {
+    const total = invoices.reduce((sum, invoice) => sum + parseFloat(invoice.outstanding_amount || 0), 0);
+    setTotalOutstanding(total);
   };
 
   const handleSearch = async () => {
@@ -218,6 +225,10 @@ const SalesOutstandingReport = () => {
       <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
         <Text style={styles.buttonText}>Search</Text>
       </TouchableOpacity>
+
+      <View style={styles.totalContainer}>
+        <Text style={styles.totalText}>Total Outstanding: {totalOutstanding.toFixed(2)} SAR</Text>
+      </View>
 
       {isLoading ? (
         <ActivityIndicator size="large" color="#153156" />
@@ -300,7 +311,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 20,
   },
   buttonText: {
     color: '#FFFFFF',
@@ -488,6 +498,18 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  totalContainer: {
+    marginVertical: 10,
+    padding: 10,
+    backgroundColor: '#E6EAF0',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  totalText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#153156',
   },
 });
 

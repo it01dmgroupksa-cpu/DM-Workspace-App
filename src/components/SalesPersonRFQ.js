@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, {useState, useContext, useEffect} from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,9 @@ import {
   Alert,
 } from 'react-native';
 import Modal from 'react-native-modal';
-import { Dropdown } from 'react-native-element-dropdown';
+import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
-import { EmployeeContext } from '../context/EmployeeContext';
+import {EmployeeContext} from '../context/EmployeeContext';
 import {
   getCustomers,
   getItemsList,
@@ -22,20 +22,21 @@ import {
 import RFQModal from './RFQModal';
 
 const SalesPersonRFQ = () => {
-  const { employeeDetails } = useContext(EmployeeContext);
+  const {employeeDetails} = useContext(EmployeeContext);
   const [customerName, setCustomerName] = useState('');
   const [remarks, setRemarks] = useState('');
-  const [items, setItems] = useState([{ item: '', quantity: '', uom: '' }]);
+  const [items, setItems] = useState([{item: '', quantity: '', uom: ''}]);
   const [customers, setCustomers] = useState([]);
   const [itemsList, setItemsList] = useState([]);
   const [uomOptions, setUomOptions] = useState([]);
   const [date, setDate] = useState(new Date());
-  const [modalVisible, setModalVisible] = useState(false);  // For item modal
-  const [rfqModalVisible, setRFQModalVisible] = useState(false);  // For RFQModal
+  const [modalVisible, setModalVisible] = useState(false); // For item modal
+  const [rfqModalVisible, setRFQModalVisible] = useState(false); // For RFQModal
   const [salesPersonName, setSalesPersonName] = useState('');
   const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
   const [isItemModalVisible, setItemModalVisible] = useState(false);
-  const [currentItemIndex, setCurrentItemIndex] = useState(null); // Track item index
+  const [currentItemIndex, setCurrentItemIndex] = useState(null);
+  const [pricingSpecifications, setPricingSpecifications] = useState('');
 
   useEffect(() => {
     fetchSalesPersonName();
@@ -81,10 +82,10 @@ const SalesPersonRFQ = () => {
   };
 
   const handleAddItem = () => {
-    setItems([...items, { item: '', quantity: '', uom: '' }]);
+    setItems([...items, {item: '', quantity: '', uom: ''}]);
   };
 
-  const handleRemoveItem = (index) => {
+  const handleRemoveItem = index => {
     const updatedItems = [...items];
     updatedItems.splice(index, 1);
     setItems(updatedItems);
@@ -105,7 +106,9 @@ const SalesPersonRFQ = () => {
     }
 
     // Validate items
-    const invalidItems = items.filter(item => !item.item || !item.quantity || !item.uom);
+    const invalidItems = items.filter(
+      item => !item.item || !item.quantity || !item.uom,
+    );
     if (invalidItems.length > 0) {
       Alert.alert('Error', 'Please fill in all fields for each item.');
       return;
@@ -118,6 +121,7 @@ const SalesPersonRFQ = () => {
         branch: employeeDetails.branch,
         customer_name: customerName,
         remarks: remarks,
+        pricing_specifcations: pricingSpecifications,
         date: date.toISOString().split('T')[0],
         items: items.map(item => ({
           item_code: item.item,
@@ -132,7 +136,8 @@ const SalesPersonRFQ = () => {
       Alert.alert('Success', 'Sales Person RFQ submitted');
       setCustomerName('');
       setRemarks('');
-      setItems([{ item: '', quantity: '', uom: '' }]);
+      setPricingSpecifications('');
+      setItems([{item: '', quantity: '', uom: ''}]);
     } catch (error) {
       console.error('Error submitting Sales Person RFQ:', error);
       Alert.alert('Error', 'Failed to submit Sales Person RFQ');
@@ -147,12 +152,12 @@ const SalesPersonRFQ = () => {
     setDatePickerVisibility(false);
   };
 
-  const handleConfirm = (selectedDate) => {
+  const handleConfirm = selectedDate => {
     setDate(selectedDate);
     hideDatePicker();
   };
 
-  const openItemModal = (index) => {
+  const openItemModal = index => {
     setCurrentItemIndex(index);
     setItemModalVisible(true);
   };
@@ -181,7 +186,7 @@ const SalesPersonRFQ = () => {
           selectedTextStyle={styles.selectedTextStyle}
           inputSearchStyle={styles.inputSearchStyle}
           iconStyle={styles.iconStyle}
-          data={customers.map((customer) => ({
+          data={customers.map(customer => ({
             label: customer.customer_name,
             value: customer.customer_name,
           }))}
@@ -207,13 +212,22 @@ const SalesPersonRFQ = () => {
           multiline
         />
 
+        <Text style={styles.label}>Pricing Specifications</Text>
+        <TextInput
+          style={styles.textArea}
+          placeholder="Enter pricing specifications"
+          placeholderTextColor="#B0B0B0"
+          value={pricingSpecifications}
+          onChangeText={setPricingSpecifications}
+          multiline
+        />
+
         <Text style={styles.label}>Items</Text>
         {items.map((item, index) => (
           <TouchableOpacity
             key={index}
             style={styles.itemContainer}
-            onPress={() => openItemModal(index)}
-          >
+            onPress={() => openItemModal(index)}>
             <Text style={styles.itemTitle}>Item {index + 1}</Text>
             <Text>{`Item: ${item.item || 'Not selected'}`}</Text>
             <Text>{`Quantity: ${item.quantity || 'Not set'}`}</Text>
@@ -230,14 +244,15 @@ const SalesPersonRFQ = () => {
         </TouchableOpacity>
 
         {/* Linking the View My RFQ to the RFQModal */}
-        <TouchableOpacity style={styles.viewRFQButton} onPress={() => setRFQModalVisible(true)}>
+        <TouchableOpacity
+          style={styles.viewRFQButton}
+          onPress={() => setRFQModalVisible(true)}>
           <Text style={styles.buttonText}>View My RFQs</Text>
         </TouchableOpacity>
 
         <Modal
           isVisible={isItemModalVisible}
-          onBackdropPress={() => setItemModalVisible(false)}
-        >
+          onBackdropPress={() => setItemModalVisible(false)}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Item Details</Text>
 
@@ -248,19 +263,26 @@ const SalesPersonRFQ = () => {
               selectedTextStyle={styles.selectedTextStyle}
               inputSearchStyle={styles.inputSearchStyle}
               iconStyle={styles.iconStyle}
-              data={itemsList.map((item) => ({
-                label: item.item_name,
+              data={itemsList.map(item => ({
+                label: `${item.item_code} - ${item.item_name}`, // Display both item_name and item_code
                 value: item.name,
+                searchKey: `${item.item_name.toLowerCase()} ${item.item_code.toLowerCase()}`, // Combined searchable string
               }))}
               search
               maxHeight={300}
               labelField="label"
               valueField="value"
               placeholder="Select Item"
-              searchPlaceholder="Search..."
-              value={currentItemIndex !== null ? items[currentItemIndex]?.item : ''}
+              searchPlaceholder="Search by name or code..."
+              value={
+                currentItemIndex !== null ? items[currentItemIndex]?.item : ''
+              }
               onChange={item => {
                 handleItemChange(currentItemIndex, 'item', item.value);
+              }}
+              searchFunction={(text, item) => {
+                const lowerText = text.toLowerCase();
+                return item.searchKey.includes(lowerText);
               }}
             />
 
@@ -269,8 +291,14 @@ const SalesPersonRFQ = () => {
               style={styles.input}
               placeholder="Enter quantity"
               placeholderTextColor="#B0B0B0"
-              value={currentItemIndex !== null ? items[currentItemIndex]?.quantity : ''}
-              onChangeText={(value) => handleItemChange(currentItemIndex, 'quantity', value)}
+              value={
+                currentItemIndex !== null
+                  ? items[currentItemIndex]?.quantity
+                  : ''
+              }
+              onChangeText={value =>
+                handleItemChange(currentItemIndex, 'quantity', value)
+              }
               keyboardType="numeric"
             />
 
@@ -291,7 +319,9 @@ const SalesPersonRFQ = () => {
               valueField="value"
               placeholder="Select UOM"
               searchPlaceholder="Search..."
-              value={currentItemIndex !== null ? items[currentItemIndex]?.uom : ''}
+              value={
+                currentItemIndex !== null ? items[currentItemIndex]?.uom : ''
+              }
               onChange={item => {
                 handleItemChange(currentItemIndex, 'uom', item.value);
               }}
@@ -299,8 +329,7 @@ const SalesPersonRFQ = () => {
 
             <TouchableOpacity
               style={styles.saveButton}
-              onPress={() => setItemModalVisible(false)}
-            >
+              onPress={() => setItemModalVisible(false)}>
               <Text style={styles.buttonText}>Save</Text>
             </TouchableOpacity>
 
@@ -310,8 +339,7 @@ const SalesPersonRFQ = () => {
                 onPress={() => {
                   handleRemoveItem(currentItemIndex);
                   setItemModalVisible(false);
-                }}
-              >
+                }}>
                 <Text style={styles.buttonText}>Remove Item</Text>
               </TouchableOpacity>
             )}
@@ -319,7 +347,10 @@ const SalesPersonRFQ = () => {
         </Modal>
 
         {/* Add RFQModal for Viewing RFQs */}
-        <RFQModal visible={rfqModalVisible} onClose={() => setRFQModalVisible(false)} />
+        <RFQModal
+          visible={rfqModalVisible}
+          onClose={() => setRFQModalVisible(false)}
+        />
       </ScrollView>
     </View>
   );
@@ -361,7 +392,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#153156',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
@@ -385,7 +416,7 @@ const styles = StyleSheet.create({
     color: '#153156',
     textAlignVertical: 'top',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
@@ -399,7 +430,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
@@ -418,7 +449,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
@@ -431,7 +462,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
@@ -444,7 +475,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 50,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
@@ -463,7 +494,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
@@ -506,7 +537,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
@@ -519,7 +550,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,

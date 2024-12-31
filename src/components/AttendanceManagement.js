@@ -29,6 +29,7 @@ import {
   uploadImageToImgur,
   hasCheckedInToday,
   hasCheckedOutToday,
+  handlePreviousDayCheck
 } from '../../api';
 import {EmployeeContext} from '../context/EmployeeContext';
 import {useNavigation} from '@react-navigation/native';
@@ -74,6 +75,10 @@ const AttendanceManagement = () => {
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRY_ATTEMPTS = 3;
 
+  useEffect(() => {
+    handlePreviousDayCheck(employeeDetails?.name);
+  }, []);
+  
   useEffect(() => {
     requestLocationPermission();
     fetchBranchLocations();
@@ -349,7 +354,7 @@ const AttendanceManagement = () => {
           parseFloat(branch.custom_latitude),
           parseFloat(branch.custom_longitude),
         );
-        return distanceToBranch <= 0.05;
+        return distanceToBranch <= 0.04;
       });
     }
 
@@ -392,6 +397,11 @@ const AttendanceManagement = () => {
           <Picker.Item 
             label="Over Time" 
             value="Over Time" 
+            style={timeCategoryStyles.pickerItem}
+          />
+          <Picker.Item 
+            label="Lunch OT" 
+            value="Lunch OT" 
             style={timeCategoryStyles.pickerItem}
           />
         </Picker>

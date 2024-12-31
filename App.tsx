@@ -19,6 +19,7 @@ import {
   ChatIcon,
   TripIcon,
   LogOutIcon,
+  WebviewIcon
 } from './src/components/icons'; // Ensure LogOutIcon is imported here
 import AttendanceManagement from './src/components/AttendanceManagement';
 import LeaveManagement from './src/components/LeaveManagement';
@@ -35,6 +36,7 @@ import EmployeeProfile from './src/components/EmployeeProfile';
 import MaterialsServiceRequestForm from './src/components/MaterialsServiceRequestForm';
 import ChatComponent from './src/components/ChatComponent';
 import DeliveryTrip from './src/components/DeliveryTrip';
+import DMWebView from './src/components/DMWebViewScreen';
 import { EmployeeProvider, EmployeeContext } from './src/context/EmployeeContext';
 import SplashScreen from './src/components/SplashScreen'; // Import SplashScreen
 
@@ -149,6 +151,14 @@ const MoreNavigator: React.FC = () => {
         options={{
           tabBarIcon: UserIcon,
           tabBarLabel: 'Profile',
+        }}
+      />
+      <Tab.Screen
+        name="DMWebView"
+        component={DMWebView}
+        options={{
+          tabBarIcon: WebviewIcon,
+          tabBarLabel: 'Web View',
         }}
       />
     </Tab.Navigator>

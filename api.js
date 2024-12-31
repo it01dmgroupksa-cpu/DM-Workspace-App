@@ -1,8 +1,7 @@
 import axios from 'axios';
 import moment from 'moment';
 import RNBlobUtil from 'react-native-blob-util';
-import { OneDrive } from '@microsoft/microsoft-graph-client';
-import { Workflow } from 'lucide-react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const api = axios.create({
   baseURL: 'https://dmgroup.frappe.cloud/api/method',
@@ -149,6 +148,186 @@ export const getEmployeeDetailsByUsername = async username => {
   }
 };
 
+export const getEmployeeShiftDetails = async username => {
+  try {
+    const response = await api.get('/frappe.client.get', {
+      params: {
+        doctype: 'Employee',
+        fieldname: 'custom_shift_details',
+        filters: JSON.stringify([['user_id', '=', username]]),
+      },
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    console.log('shift details:', response.data.message);
+    return response.data.message;
+    
+  } catch (error) {
+    console.error('Error Fetching Shift Details:', error.response ? error.response.data : error.message);
+    throw error;
+  }
+};
+
+const getShiftEndForOffice = async () => {
+  try {
+    const shiftDetails = await AsyncStorage.getItem('shiftDetails');
+    if (!shiftDetails) {
+      console.error('No shift details found in AsyncStorage');
+      return null;
+    }
+
+    const parsedDetails = JSON.parse(shiftDetails);
+    const officeShift = parsedDetails.find((shift) => shift.shift_type === 'Office');
+    return officeShift?.shift_end || null;
+  } catch (error) {
+    console.error('Error retrieving shift details:', error);
+    return null;
+  }
+};
+
+export const checkInAtTime = async (employeeID, location, deviceID, imageLink, timeCategory = 'Regular Time', customTime) => {
+  try {
+    console.log('Performing Check-In at:', customTime);
+    const response = await api.post(
+      '/frappe.client.insert',
+      {
+        doc: {
+          doctype: 'Employee Checkin',
+          employee: employeeID,
+          log_type: 'IN',
+          time: customTime, // Use custom time instead of current time
+          custom_longitude: location.longitude,
+          custom_latitude: location.latitude,
+          location: `${location.latitude}, ${location.longitude}`,
+          device_id: deviceID,
+          custom_attendance_device: 'Mobile Device',
+          image: imageLink,
+          custom_time_category: timeCategory,
+        },
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    console.log('Check-In at specified time successful:', response.data.message);
+    return response.data;
+  } catch (error) {
+    console.error('Error performing Check-In at specified time:', error);
+    throw error;
+  }
+};
+
+export const checkOutAtTime = async (employeeID, location, deviceID, imageLink, timeCategory = 'Regular Time', customTime) => {
+  try {
+    console.log('Performing Check-Out at:', customTime);
+    const response = await api.post(
+      '/frappe.client.insert',
+      {
+        doc: {
+          doctype: 'Employee Checkin',
+          employee: employeeID,
+          log_type: 'OUT',
+          time: customTime, // Use custom time instead of current time
+          custom_longitude: location.longitude,
+          custom_latitude: location.latitude,
+          location: `${location.latitude}, ${location.longitude}`,
+          device_id: deviceID,
+          custom_attendance_device: 'Mobile Device',
+          image: imageLink,
+          custom_time_category: timeCategory,
+        },
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    console.log('Check-Out at specified time successful:', response.data.message);
+    return response.data;
+  } catch (error) {
+    console.error('Error performing Check-Out at specified time:', error);
+    throw error;
+  }
+};
+
+
+export const handlePreviousDayCheck = async (employeeID) => {
+  try {
+    const shiftEnd = await getShiftEndForOffice();
+    if (!shiftEnd) {
+      console.error('Shift end time not found for Office');
+      return;
+    }
+
+    const yesterdayStart = moment().subtract(1, 'day').startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
+    const todayStart = moment().startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
+
+    // Fetch all check-ins and checkouts for the previous day
+    const response = await api.get('/frappe.client.get_list', {
+      params: {
+        doctype: 'Employee Checkin',
+        fields: JSON.stringify(['log_type', 'time', 'custom_time_category']),
+        filters: JSON.stringify([
+          ['employee', '=', employeeID],
+          ['time', '>=', yesterdayStart],
+          ['time', '<', todayStart],
+          ['custom_attendance_device', '=', 'Mobile Device'],
+        ]),
+        order_by: 'time asc',
+      },
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const checkLogs = response.data.message;
+
+    // Check for Normal and Overtime conditions
+    const normalCheckIn = checkLogs.find(log => log.log_type === 'IN' && log.custom_time_category === 'Regular Time');
+    const normalCheckOut = checkLogs.find(log => log.log_type === 'OUT' && log.custom_time_category === 'Regular Time');
+    const overtimeCheckIn = checkLogs.find(log => log.log_type === 'IN' && log.custom_time_category === 'Over Time');
+    const overtimeCheckOut = checkLogs.find(log => log.log_type === 'OUT' && log.custom_time_category === 'Over Time');
+
+    if (normalCheckIn && overtimeCheckOut && !normalCheckOut && !overtimeCheckIn) {
+      // Perform Normal Checkout at shift end
+      const shiftEndTime = moment(`${moment().subtract(1, 'day').format('YYYY-MM-DD')} ${shiftEnd}`, 'YYYY-MM-DD HH:mm:ss').format('YYYY-MM-DD HH:mm:ss');
+      console.log('Performing Normal Checkout at shift end:', shiftEndTime);
+
+      await checkOutAtTime(employeeID, { latitude: 0, longitude: 0 }, 'AUTO_CHECK', '', 'Regular Time', shiftEndTime);
+      console.log('Performed Normal Checkout automatically at shift end.');
+
+      // Perform Overtime Check-In at the same time
+      await checkInAtTime(employeeID, { latitude: 0, longitude: 0 }, 'AUTO_CHECK', '', 'Over Time', shiftEndTime);
+      console.log('Performed Overtime Check-In automatically at shift end.');
+    }
+
+    // Check for Lunch OT
+    const lunchOTCheckIn = checkLogs.find(log => log.log_type === 'IN' && log.custom_time_category === 'Lunch OT');
+    const lunchOTCheckOut = checkLogs.find(log => log.log_type === 'OUT' && log.custom_time_category === 'Lunch OT');
+
+    if (lunchOTCheckIn && !lunchOTCheckOut) {
+      const lunchOTCheckInTime = moment(lunchOTCheckIn.time);
+      const lunchOTCheckOutTime = lunchOTCheckInTime.add(1, 'hour').format('YYYY-MM-DD HH:mm:ss');
+
+      console.log('Performing Lunch OT Checkout at:', lunchOTCheckOutTime);
+
+      // Perform Lunch OT Checkout 1 hour after check-in
+      await checkOutAtTime(employeeID, { latitude: 0, longitude: 0 }, 'AUTO_CHECK', '', 'Lunch OT', lunchOTCheckOutTime);
+      console.log('Performed Lunch OT Checkout automatically after 1 hour of check-in.');
+    }
+  } catch (error) {
+    console.error('Error handling previous day checks:', error);
+  }
+};
+
+
 export const checkIn = async (employeeID, location, deviceID, imageLink, timeCategory = 'Regular Time') => {
   const currentTime = moment().format('YYYY-MM-DD HH:mm:ss');
   console.log('latitude', location.latitude)
@@ -287,6 +466,7 @@ export const hasCheckedOutToday = async (employeeID, timeCategory = 'Regular Tim
     throw error;
   }
 };
+
 export const uploadImageToImgur = async (base64Image, fileName) => {
   const IMGUR_CLIENT_ID = '96c24c758d8b494';
 
@@ -539,6 +719,7 @@ export const requestSalesPersonQuotation = async quotationRequest => {
 
 export const submitSalesPersonRFQ = async rfq => {
   try {
+    console.log('rfq being sent', rfq)
     const response = await api.post('/frappe.client.insert', {
       doc: {
         doctype: 'Sales Person RFQ',
@@ -1392,7 +1573,7 @@ export const getUnpaidOverdueInvoices = async (salesPersonName) => {
       params: {
         doctype: 'Sales Invoice',
         filters: JSON.stringify([
-          ['status', 'in', ['Unpaid', 'Overdue']], 
+          ['status', 'in', ['Unpaid', 'Overdue','Partly Paid']], 
           ['sales_person', '=', salesPersonName],  
         ]),
         fields: JSON.stringify([
