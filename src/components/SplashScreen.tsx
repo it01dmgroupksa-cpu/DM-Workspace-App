@@ -10,22 +10,25 @@ const SplashScreen: React.FC = () => {
   // Simulate a loading process
   useEffect(() => {
     // Fade-in animation for logo
-    Animated.timing(logoOpacity, {
+    const logoAnimation = Animated.timing(logoOpacity, {
       toValue: 1,
       duration: 1500,
       useNativeDriver: true,
-    }).start();
+    });
+    logoAnimation.start();
 
     // Delay the text fade-in by 1 second, after the logo starts appearing
-    setTimeout(() => {
-      Animated.timing(textOpacity, {
+    let textAnimation: Animated.CompositeAnimation | undefined;
+    const textTimer = setTimeout(() => {
+      textAnimation = Animated.timing(textOpacity, {
         toValue: 1,
         duration: 1500,
         useNativeDriver: true,
-      }).start();
+      });
+      textAnimation.start();
     }, 1000);
 
-    const timer = setTimeout(() => {
+    const navigationTimer = setTimeout(() => {
       // Use reset to clear the stack and navigate to the main app
       navigation.dispatch(
         CommonActions.reset({
@@ -35,7 +38,12 @@ const SplashScreen: React.FC = () => {
       );
     }, 4000); // 4 seconds delay for the splash screen
 
-    return () => clearTimeout(timer); // Clean up the timer
+    return () => {
+      clearTimeout(textTimer);
+      clearTimeout(navigationTimer);
+      logoAnimation.stop();
+      textAnimation?.stop();
+    };
   }, [logoOpacity, textOpacity, navigation]);
 
   return (

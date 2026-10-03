@@ -15,12 +15,10 @@ import {
   Modal,
   ActivityIndicator,
   Image,
-  PermissionsAndroid,
-  Platform,
 } from 'react-native';
 import {Picker} from '@react-native-picker/picker';
-import {RNCamera} from 'react-native-camera';
-import Geolocation from '@react-native-community/geolocation';
+import {CameraView, useCameraPermissions} from 'expo-camera';
+import * as Location from 'expo-location';
 import NetInfo from '@react-native-community/netinfo';
 import {
   checkIn,
@@ -44,7 +42,20 @@ import {
   XCircleIcon,
 } from './icons';
 import moment from 'moment';
-import { CommonActions } from '@react-navigation/native';
+
+const deg2rad = degrees => degrees * (Math.PI / 180);
+
+const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
+  const earthRadius = 6371;
+  const latitudeDelta = deg2rad(lat2 - lat1);
+  const longitudeDelta = deg2rad(lon2 - lon1);
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(deg2rad(lat1)) *
+      Math.cos(deg2rad(lat2)) *
+      Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadius * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+};
 
 const AttendanceManagement = () => {
   const {employeeDetails, setEmployeeDetails} = useContext(EmployeeContext);
@@ -61,24 +72,25 @@ const AttendanceManagement = () => {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [isStatusSuccess, setIsStatusSuccess] = useState(false);
-  const [locationDetectionAttempts, setLocationDetectionAttempts] = useState(0);
   const [isDetectingLocation, setIsDetectingLocation] = useState(true);
-  const [isCalculatingDistance, setIsCalculatingDistance] = useState(false);
   const [isBranchLocationsReady, setIsBranchLocationsReady] = useState(false);
   const [locationStatus, setLocationStatus] = useState('detecting');
   const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
   const [selectedTimeCategory, setSelectedTimeCategory] = useState('Regular Time');
-  const locationUpdateTimeRef = useRef(null);
   const cameraRef = useRef(null);
   const navigation = useNavigation();
   const [locationError, setLocationError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [hasLocationPermission, setHasLocationPermission] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const MAX_RETRY_ATTEMPTS = 3;
 
   useEffect(() => {
-    handlePreviousDayCheck(employeeDetails?.name);
-  }, []);
-  
+    if (employeeDetails?.name) {
+      handlePreviousDayCheck(employeeDetails.name);
+    }
+  }, [employeeDetails?.name]);
+
   useEffect(() => {
     requestLocationPermission();
     fetchBranchLocations();
@@ -92,22 +104,6 @@ const AttendanceManagement = () => {
       clearInterval(dateTimeInterval);
     };
   }, []);
-
-  useEffect(() => {
-    const initializeComponent = async () => {
-      await fetchBranchLocations();
-      await requestLocationPermission();
-    };
-
-    initializeComponent();
-  }, []);
-
-  useEffect(() => {
-    if (isDetectingLocation && branchLocations.length > 0) {
-      const locationInterval = setInterval(getLocation, 10000);
-      return () => clearInterval(locationInterval);
-    }
-  }, [isDetectingLocation, branchLocations, getLocation]);
 
   useEffect(() => {
     if (!employeeDetails) {
@@ -129,28 +125,27 @@ const AttendanceManagement = () => {
   };
 
   const requestLocationPermission = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+    try {
+      const {status} = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setStatusMessage(
+          'Location permission denied. Please enable location services to use this feature.',
         );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          console.log('Location permission denied');
-          setStatusMessage(
-            'Location permission denied. Please enable location services to use this feature.',
-          );
-          setIsStatusSuccess(false);
-          setShowStatusModal(true);
-          setIsDetectingLocation(false);
-        } else {
-          getLocation();
-        }
-      } catch (err) {
-        console.warn(err);
+        setIsStatusSuccess(false);
+        setShowStatusModal(true);
         setIsDetectingLocation(false);
+        return;
       }
-    } else {
-      getLocation();
+
+      setHasLocationPermission(true);
+    } catch (error) {
+      console.error('Failed to request location permission:', error);
+      setStatusMessage(
+        'Unable to request location permission. Please try again.',
+      );
+      setIsStatusSuccess(false);
+      setShowStatusModal(true);
+      setIsDetectingLocation(false);
     }
   };
 
@@ -174,77 +169,9 @@ const AttendanceManagement = () => {
   const checkNetworkStatus = () => {
     NetInfo.fetch().then(state => {
       setNetworkStatus(state);
+    }).catch(error => {
+      console.error('Failed to fetch network status:', error);
     });
-  };
-
-  const getLocation = useCallback(() => {
-    console.log('Getting location...');
-    setLocationStatus('detecting');
-    setLocationError(null);
-
-    if (branchLocations.length === 0) {
-      console.log('Waiting for branch locations...');
-      return;
-    }
-
-    Geolocation.getCurrentPosition(
-      position => {
-        const latitude = parseFloat(position.coords.latitude);
-        const longitude = parseFloat(position.coords.longitude);
-
-        console.log('Location received - Lat:', latitude, 'Long:', longitude);
-
-        if (isNaN(latitude) || isNaN(longitude)) {
-          console.error('Invalid coordinates received');
-          setLocationStatus('error');
-          setLocationError('Invalid coordinates received');
-          return;
-        }
-
-        setLocation({latitude, longitude});
-        setRetryCount(0);
-        setLocationDetectionAttempts(0);
-        setIsDetectingLocation(false);
-
-        updateDistanceToOffice({latitude, longitude});
-      },
-      error => {
-        console.error('Location error:', error);
-        setLocationStatus('error');
-        setLocationError(error.message || 'Unknown error occurred');
-        setLocationDetectionAttempts(prev => prev + 1);
-        
-        if (retryCount < MAX_RETRY_ATTEMPTS) {
-          setRetryCount(prevCount => prevCount + 1);
-          setTimeout(getLocation, 5000); // Retry after 5 seconds
-        } else {
-          setIsDetectingLocation(false);
-          setStatusMessage(
-            'Unable to detect your location. Please check your GPS settings and try again.',
-          );
-          setIsStatusSuccess(false);
-          setShowStatusModal(true);
-        }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 10000,
-      },
-    );
-  }, [branchLocations, retryCount, updateDistanceToOffice]);
-
-  useEffect(() => {
-    if (isDetectingLocation && branchLocations.length > 0) {
-      getLocation();
-    }
-  }, [isDetectingLocation, branchLocations, getLocation]);
-
-  const handleRetryLocation = () => {
-    setRetryCount(0);
-    setLocationDetectionAttempts(0);
-    setIsDetectingLocation(true);
-    getLocation();
   };
 
   const updateDistanceToOffice = useCallback(
@@ -314,68 +241,135 @@ const AttendanceManagement = () => {
     [branchLocations, isBranchLocationsReady],
   );
 
-  const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
-    const dLat = deg2rad(lat2 - lat1);
-    const dLon = deg2rad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(deg2rad(lat1)) *
-        Math.cos(deg2rad(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
+  const getLocation = useCallback(async () => {
+    console.log('Getting location...');
+    setLocationStatus('detecting');
+    setLocationError(null);
 
-  const deg2rad = deg => {
-    return deg * (Math.PI / 180);
-  };
-
-  const canCheckInOrOut = actionType => {
-    if (!location) {
-      return false;
+    if (branchLocations.length === 0) {
+      console.log('Waiting for branch locations...');
+      return;
     }
 
-    const outsideCheck =
-      actionType === 'checkIn'
-        ? employeeDetails?.custom_outside_check_in
-        : employeeDetails?.custom_outside_check_out;
-
-    if (outsideCheck) {
-      return true;
-    }
-
-    if (employeeDetails?.custom_all_location_attendance) {
-      return branchLocations.some(branch => {
-        const distanceToBranch = getDistanceFromLatLonInKm(
-          location.latitude,
-          location.longitude,
-          parseFloat(branch.custom_latitude),
-          parseFloat(branch.custom_longitude),
-        );
-        return distanceToBranch <= 0.04;
+    try {
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
       });
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error('Invalid coordinates received');
+      }
+
+      setLocation({latitude, longitude});
+      setRetryCount(0);
+      setIsDetectingLocation(false);
+      updateDistanceToOffice({latitude, longitude});
+    } catch (error) {
+      console.error('Location error:', error);
+      setLocationStatus('error');
+      setLocationError(error.message || 'Unknown error occurred');
+
+      if (retryCount < MAX_RETRY_ATTEMPTS) {
+        setRetryCount(prevCount => prevCount + 1);
+      } else {
+        setIsDetectingLocation(false);
+        setStatusMessage(
+          'Unable to detect your location. Please check your GPS settings and try again.',
+        );
+        setIsStatusSuccess(false);
+        setShowStatusModal(true);
+      }
+    }
+  }, [branchLocations, retryCount, updateDistanceToOffice]);
+
+  useEffect(() => {
+    if (
+      !hasLocationPermission ||
+      !isDetectingLocation ||
+      branchLocations.length === 0
+    ) {
+      return undefined;
     }
 
-    const assignedBranch = branchLocations.find(
-      branch => branch.branch_location === employeeDetails?.custom_job_location,
-    );
+    const retryDelay = retryCount === 0 ? 0 : 5000;
+    const retryTimer = setTimeout(() => {
+      getLocation();
+    }, retryDelay);
 
-    if (!assignedBranch) {
-      console.error('Assigned branch not found');
-      return false;
+    return () => clearTimeout(retryTimer);
+  }, [
+    branchLocations.length,
+    getLocation,
+    hasLocationPermission,
+    isDetectingLocation,
+    retryCount,
+  ]);
+
+  const handleRetryLocation = () => {
+    setRetryCount(0);
+    setIsDetectingLocation(true);
+    if (!hasLocationPermission) {
+      requestLocationPermission();
     }
-
-    const distanceToAssignedBranch = getDistanceFromLatLonInKm(
-      location.latitude,
-      location.longitude,
-      parseFloat(assignedBranch.custom_latitude),
-      parseFloat(assignedBranch.custom_longitude),
-    );
-
-    return distanceToAssignedBranch <= 0.05;
   };
+
+  const canCheckInOrOut = useCallback(
+    actionType => {
+      if (!location) {
+        return false;
+      }
+
+      const outsideCheck =
+        actionType === 'checkIn'
+          ? employeeDetails?.custom_outside_check_in
+          : employeeDetails?.custom_outside_check_out;
+
+      if (outsideCheck) {
+        return true;
+      }
+
+      if (employeeDetails?.custom_all_location_attendance) {
+        return branchLocations.some(branch => {
+          const distanceToBranch = getDistanceFromLatLonInKm(
+            location.latitude,
+            location.longitude,
+            parseFloat(branch.custom_latitude),
+            parseFloat(branch.custom_longitude),
+          );
+          return distanceToBranch <= 0.04;
+        });
+      }
+
+      const assignedBranch = branchLocations.find(
+        branch =>
+          branch.branch_location === employeeDetails?.custom_job_location,
+      );
+
+      if (!assignedBranch) {
+        console.error('Assigned branch not found');
+        return false;
+      }
+
+      const distanceToAssignedBranch = getDistanceFromLatLonInKm(
+        location.latitude,
+        location.longitude,
+        parseFloat(assignedBranch.custom_latitude),
+        parseFloat(assignedBranch.custom_longitude),
+      );
+
+      return distanceToAssignedBranch <= 0.05;
+    },
+    [
+      branchLocations,
+      employeeDetails?.custom_all_location_attendance,
+      employeeDetails?.custom_job_location,
+      employeeDetails?.custom_outside_check_in,
+      employeeDetails?.custom_outside_check_out,
+      location,
+    ],
+  );
 
   const TimeCategorySelector = () => {
     if (!employeeDetails?.is_eligible) {
@@ -409,29 +403,41 @@ const AttendanceManagement = () => {
     );
   };
 
-  const handleConfirmAttendance = async () => {
+  const handleConfirmAttendance = useCallback(async () => {
     setIsSubmitting(true);
     setShowConfirmModal(false);
     try {
       const deviceID = employeeDetails?.custom_job_location || 'Mobile Device';
       let imageLink = null;
-  
+
       if (capturedImage) {
         imageLink = await uploadImageToImgur(
           capturedImage.base64,
           capturedImage.fileName,
         );
       }
-  
+
       if (attendanceType === 'checkIn') {
-        await checkIn(employeeDetails?.name, location, deviceID, imageLink, selectedTimeCategory);
+        await checkIn(
+          employeeDetails?.name,
+          location,
+          deviceID,
+          imageLink,
+          selectedTimeCategory,
+        );
       } else {
-        await checkOut(employeeDetails?.name, location, deviceID, imageLink, selectedTimeCategory);
+        await checkOut(
+          employeeDetails?.name,
+          location,
+          deviceID,
+          imageLink,
+          selectedTimeCategory,
+        );
       }
-  
+
       setCapturedImage(null);
       setAttendanceType(null);
-  
+
       setStatusMessage(
         `${attendanceType === 'checkIn' ? 'Check-in' : 'Check-out'} successful for ${selectedTimeCategory.toLowerCase()}!`,
       );
@@ -449,7 +455,14 @@ const AttendanceManagement = () => {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [
+    attendanceType,
+    capturedImage,
+    employeeDetails?.custom_job_location,
+    employeeDetails?.name,
+    location,
+    selectedTimeCategory,
+  ]);
 
   const captureImage = useCallback(async () => {
     if (!cameraRef.current) {
@@ -693,13 +706,38 @@ const AttendanceManagement = () => {
           <Text style={styles.title}>Attendance Management</Text>
           <View style={styles.cameraContainer}>
             {employeeDetails?.custom_capture_selfie ? (
-              <RNCamera
-                ref={cameraRef}
-                style={styles.camera}
-                type={RNCamera.Constants.Type.front}
-                captureAudio={false}
-                onCameraReady={() => console.log('Camera is ready')}
-              />
+              cameraPermission?.granted ? (
+                <CameraView
+                  ref={cameraRef}
+                  style={styles.camera}
+                  facing="front"
+                />
+              ) : (
+                <TouchableOpacity
+                  style={styles.disabledCamera}
+                  onPress={async () => {
+                    try {
+                      const permission = await requestCameraPermission();
+                      if (!permission.granted) {
+                        Alert.alert(
+                          'Camera permission required',
+                          'Allow camera access to take an attendance selfie.',
+                        );
+                      }
+                    } catch (error) {
+                      console.error(
+                        'Failed to request camera permission:',
+                        error,
+                      );
+                      Alert.alert(
+                        'Error',
+                        'Unable to request camera permission.',
+                      );
+                    }
+                  }}>
+                  <Text>Enable camera to take an attendance selfie</Text>
+                </TouchableOpacity>
+              )
             ) : (
               <View style={styles.disabledCamera} />
             )}

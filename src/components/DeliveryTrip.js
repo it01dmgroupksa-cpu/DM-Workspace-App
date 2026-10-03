@@ -18,7 +18,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Modal from 'react-native-modal';
-import {RNCamera} from 'react-native-camera';
+import {CameraView, useCameraPermissions} from 'expo-camera';
 import {EmployeeContext} from '../context/EmployeeContext';
 import {
   getAssignedDeliveryTrips,
@@ -43,14 +43,36 @@ const DeliveryTrip = () => {
   const [capturedImages, setCapturedImages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   const cameraRef = useRef(null);
 
-  useEffect(() => {
-    fetchDeliveryTrips();
-  }, []);
+  const openCamera = async () => {
+    try {
+      const permission = cameraPermission?.granted
+        ? cameraPermission
+        : await requestCameraPermission();
 
-  const fetchDeliveryTrips = async () => {
+      if (!permission.granted) {
+        Alert.alert(
+          'Camera permission required',
+          'Allow camera access to capture signed delivery notes.',
+        );
+        return;
+      }
+
+      setCameraVisible(true);
+    } catch (error) {
+      console.error('Failed to request camera permission:', error);
+      Alert.alert('Error', 'Unable to request camera permission.');
+    }
+  };
+
+  const fetchDeliveryTrips = useCallback(async () => {
+    if (!employeeDetails?.name) {
+      return;
+    }
+
     try {
       const trips = await getAssignedDeliveryTrips(employeeDetails.name);
       const tripsWithStops = await Promise.all(
@@ -61,9 +83,14 @@ const DeliveryTrip = () => {
       );
       setDeliveryTrips(tripsWithStops);
     } catch (error) {
+      console.error('Failed to fetch delivery trips:', error);
       Alert.alert('Error', 'Failed to fetch delivery trips');
     }
-  };
+  }, [employeeDetails?.name]);
+
+  useEffect(() => {
+    fetchDeliveryTrips();
+  }, [fetchDeliveryTrips]);
 
   const handleTripPress = trip => {
     setSelectedTrip(trip);
@@ -93,14 +120,19 @@ const DeliveryTrip = () => {
   }, []);
 
   const handleCaptureImage = async () => {
-    const imageData = await captureImage();
-    if (imageData) {
-      const fileName = `signed_note_${Date.now()}.jpg`;
-      setCapturedImages(prevImages => [
-        ...prevImages,
-        {...imageData, fileName},
-      ]);
-      setCameraVisible(false);
+    try {
+      const imageData = await captureImage();
+      if (imageData) {
+        const fileName = `signed_note_${Date.now()}.jpg`;
+        setCapturedImages(prevImages => [
+          ...prevImages,
+          {...imageData, fileName},
+        ]);
+        setCameraVisible(false);
+      }
+    } catch (error) {
+      console.error('Failed to capture delivery note image:', error);
+      Alert.alert('Error', 'Unable to capture the delivery note photo.');
     }
   };
 
@@ -310,7 +342,7 @@ const DeliveryTrip = () => {
           </Text>
           <TouchableOpacity
             style={styles.captureButton}
-            onPress={() => setCameraVisible(true)}
+            onPress={openCamera}
             disabled={capturedImages.length >= 4}>
             <Text style={styles.buttonText}>
               {capturedImages.length >= 4
@@ -542,12 +574,10 @@ const DeliveryTrip = () => {
       onBackdropPress={() => setCameraVisible(false)}
       style={styles.cameraModal}>
       <View style={styles.cameraContainer}>
-        <RNCamera
+        <CameraView
           ref={cameraRef}
           style={styles.camera}
-          type={RNCamera.Constants.Type.back}
-          captureAudio={false}
-          onCameraReady={() => console.log('Camera is ready')}
+          facing="back"
         />
         <TouchableOpacity
           style={styles.captureButton}

@@ -1,13 +1,12 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, ScrollView, SafeAreaView } from 'react-native';
-import DocumentPicker from 'react-native-document-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Modal from 'react-native-modal';
 import { Picker } from '@react-native-picker/picker';
 import { EmployeeContext } from '../context/EmployeeContext';
 import { requestLeave, getLeaveRequests } from '../../api';
-import { useNavigation } from '@react-navigation/native';
-import Icon from 'react-native-vector-icons/Ionicons';
+import {Ionicons} from '@expo/vector-icons';
 
 const leaveTypes = [
   { label: 'Leave Without Pay', value: 'Leave Without Pay' },
@@ -51,22 +50,23 @@ const LeaveManagement = () => {
   const [showFromDatePicker, setShowFromDatePicker] = useState(false);
   const [showToDatePicker, setShowToDatePicker] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const navigation = useNavigation();
-
-  useEffect(() => {
-    if (employeeDetails) {
-      fetchLeaveRequests();
+  const fetchLeaveRequests = useCallback(async () => {
+    if (!employeeDetails?.name) {
+      return;
     }
-  }, [employeeDetails]);
 
-  const fetchLeaveRequests = async () => {
     try {
       const requests = await getLeaveRequests(employeeDetails.name);
       setLeaveRequests(requests.sort((a, b) => new Date(b.from_date) - new Date(a.from_date)));
     } catch (error) {
       console.error('Error fetching leave requests:', error);
+      Alert.alert('Error', 'Failed to fetch leave requests.');
     }
-  };
+  }, [employeeDetails?.name]);
+
+  useEffect(() => {
+    fetchLeaveRequests();
+  }, [fetchLeaveRequests]);
 
   const handleRequestLeave = async () => {
     if (!leaveType || !fromDate || !toDate || !reason) {
@@ -102,16 +102,21 @@ const LeaveManagement = () => {
 
   const handleDocumentPicker = async () => {
     try {
-      const result = await DocumentPicker.pickSingle({
-        type: [DocumentPicker.types.allFiles],
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
       });
-      setDocument(result);
-    } catch (err) {
-      if (DocumentPicker.isCancel(err)) {
-        console.log('User cancelled the document picker');
-      } else {
-        throw err;
+      if (!result.canceled && result.assets?.[0]) {
+        const file = result.assets[0];
+        setDocument({
+          uri: file.uri,
+          name: file.name,
+          type: file.mimeType || 'application/octet-stream',
+        });
       }
+    } catch (error) {
+      console.error('Failed to select leave attachment:', error);
+      Alert.alert('Error', 'Failed to select the attachment.');
     }
   };
 
@@ -169,7 +174,7 @@ const LeaveManagement = () => {
             multiline
           />
           <TouchableOpacity style={styles.attachButton} onPress={handleDocumentPicker}>
-            <Icon name="attach" size={24} color="#153156" />
+            <Ionicons name="attach" size={24} color="#153156" />
             <Text style={styles.attachButtonText}>
               {document ? document.name : 'Attach Document'}
             </Text>

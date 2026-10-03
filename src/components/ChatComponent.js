@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,14 +13,14 @@ import {
   StatusBar,
   Image,
   PermissionsAndroid,
+  Platform,
 } from 'react-native';
-import DocumentPicker from 'react-native-document-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import SendBird from 'sendbird';
-import RNFetchBlob from 'rn-fetch-blob';
+import RNBlobUtil from 'react-native-blob-util';
 import { EmployeeContext } from '../context/EmployeeContext';
 import { BackIcon, NewChatIcon, SendIcon, CloseIcon, PlusIcon, DownloadIcon} from './icons';
 import { format } from 'date-fns';
-import RNFS from 'react-native-fs';
 
 const sb = new SendBird({ appId: 'F14632B9-78B6-4F39-B7BF-9E5770445DDA' });
 
@@ -37,47 +37,7 @@ const ChatComponent = () => {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const flatListRef = useRef(null);
 
-  useEffect(() => {
-    if (employeeDetails.name) {
-      connectToSendbird();
-      fetchSendbirdUsers();
-    }
-  }, [employeeDetails.name]);
-  
-
-  const connectToSendbird = async () => {
-    try {
-      const user = await sb.connect(employeeDetails.name);
-      console.log('Connected to Sendbird', user);
-      getChannelList();
-    } catch (error) {
-      console.error('Sendbird connection error:', error);
-      setError('Failed to connect to chat service. Please try again later.');
-      Alert.alert('Error', 'Failed to connect to chat service. Please try again later.');
-    }
-  };
-
-  const fetchSendbirdUsers = () => {
-    const userListQuery = sb.createApplicationUserListQuery();
-    userListQuery.limit = 100;
-
-    userListQuery.next((users, error) => {
-      if (error) {
-        console.error('Error fetching Sendbird users:', error);
-        Alert.alert('Error', 'Failed to fetch users. Please try again later.');
-      } else {
-        const filteredUsers = users.filter(
-          (user) =>
-            user.userId !== employeeDetails.name &&
-            user.userId !== 'sendbird_desk_agent_id_4e6ff725-b4b2-4b02-a54f-7087fae3ddc3'
-        );
-        setEmployeesWithAccess(filteredUsers);
-      }
-      setLoading(false);
-    });
-  };
-
-  const getChannelList = () => {
+  const getChannelList = useCallback(() => {
     const channelListQuery = sb.GroupChannel.createMyGroupChannelListQuery();
     channelListQuery.includeEmpty = true;
     channelListQuery.order = 'latest_last_message';
@@ -94,7 +54,57 @@ const ChatComponent = () => {
         setLoading(false);
       });
     }
-  };
+  }, []);
+
+  const connectToSendbird = useCallback(async () => {
+    if (!employeeDetails?.name) {
+      return;
+    }
+
+    try {
+      const user = await sb.connect(employeeDetails.name);
+      console.log('Connected to Sendbird', user);
+      getChannelList();
+    } catch (error) {
+      console.error('Sendbird connection error:', error);
+      setError('Failed to connect to chat service. Please try again later.');
+      Alert.alert(
+        'Error',
+        'Failed to connect to chat service. Please try again later.',
+      );
+    }
+  }, [employeeDetails?.name, getChannelList]);
+
+  const fetchSendbirdUsers = useCallback(() => {
+    if (!employeeDetails?.name) {
+      return;
+    }
+
+    const userListQuery = sb.createApplicationUserListQuery();
+    userListQuery.limit = 100;
+
+    userListQuery.next((users, error) => {
+      if (error) {
+        console.error('Error fetching Sendbird users:', error);
+        Alert.alert('Error', 'Failed to fetch users. Please try again later.');
+      } else {
+        const filteredUsers = users.filter(
+          user =>
+            user.userId !== employeeDetails.name &&
+            user.userId !== 'sendbird_desk_agent_id_4e6ff725-b4b2-4b02-a54f-7087fae3ddc3',
+        );
+        setEmployeesWithAccess(filteredUsers);
+      }
+      setLoading(false);
+    });
+  }, [employeeDetails?.name]);
+
+  useEffect(() => {
+    if (employeeDetails?.name) {
+      connectToSendbird();
+      fetchSendbirdUsers();
+    }
+  }, [employeeDetails?.name, connectToSendbird, fetchSendbirdUsers]);
 
   const handleChannelPress = (channel) => {
     channel.markAsRead();
@@ -143,52 +153,28 @@ const ChatComponent = () => {
 
   const selectFile = async () => {
     try {
-      const result = await DocumentPicker.pick({
-        type: [DocumentPicker.types.allFiles],
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
       });
-      
-      console.log('Selected file: ', result);
-  
-      if (result && result[0]) {
-        const file = result[0];
-        const resolvedFile = await resolveContentUri(file);
-        sendFile(resolvedFile);
-      } else {
-        console.error('No file selected or invalid selection result');
-        Alert.alert('Error', 'No file selected or invalid selection result');
+
+      if (result.canceled) {
+        return;
       }
-    } catch (err) {
-      if (DocumentPicker.isCancel(err)) {
-        console.log('File selection was cancelled.');
-      } else {
-        console.error('File selection error: ', err);
-        Alert.alert('Error', 'Failed to select file. Please try again.');
+
+      const file = result.assets?.[0];
+      if (!file) {
+        throw new Error('The document picker returned no file.');
       }
-    }
-  };
-  
-  const resolveContentUri = async (file) => {
-    try {
-      if (!file.uri) {
-        throw new Error('File URI is undefined');
-      }
-  
-      let resolvedPath = file.uri;
-  
-      if (Platform.OS === 'android' && file.uri.startsWith('content://')) {
-        const destPath = `${RNFS.CachesDirectoryPath}/${file.name}`;
-        await RNFS.copyFile(file.uri, destPath);
-        resolvedPath = `file://${destPath}`;
-      }
-  
-      return {
-        uri: resolvedPath,
-        name: file.name || 'unknown',
-        type: file.type || 'application/octet-stream',
-      };
+
+      sendFile({
+        uri: file.uri,
+        name: file.name,
+        type: file.mimeType || 'application/octet-stream',
+      });
     } catch (error) {
-      console.error('Failed to resolve content URI:', error);
-      throw new Error('Could not resolve file path.');
+      console.error('File selection error:', error);
+      Alert.alert('Error', 'Failed to select file. Please try again.');
     }
   };
 
@@ -270,42 +256,45 @@ const ChatComponent = () => {
 
   const downloadFile = async (fileUrl, fileName) => {
     try {
-      // Check permission when download button is clicked
-      const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
-  
-      if (!granted) {
-        const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
-  
-        if (result !== PermissionsAndroid.RESULTS.GRANTED) {
-          Alert.alert('Permission Denied', 'You need to grant storage permission to download files.');
-          return; // Exit the function if permission is denied
+      if (Platform.OS === 'android' && Number(Platform.Version) <= 28) {
+        const permission = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+        const granted = await PermissionsAndroid.check(permission);
+
+        if (!granted) {
+          const result = await PermissionsAndroid.request(permission);
+          if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert(
+              'Permission denied',
+              'Storage permission is required to download files on this Android version.',
+            );
+            return;
+          }
         }
       }
-  
-      // Proceed with the download if permission is granted
-      const { config, fs } = RNFetchBlob;
-      const downloadDir = fs.dirs.DownloadDir;
-      const path = `${downloadDir}/${fileName}`;
-  
-      config({
+
+      const {config, fs} = RNBlobUtil;
+      const downloadDir =
+        Platform.OS === 'android' ? fs.dirs.DownloadDir : fs.dirs.DocumentDir;
+      const safeFileName =
+        fileName.replace(/[<>:"/\\|?*]/g, '_') || 'download';
+      const path = `${downloadDir}/${safeFileName}`;
+
+      await config({
         fileCache: true,
-        addAndroidDownloads: {
-          useDownloadManager: true,
-          notification: true,
-          path: path,
-          description: 'Downloading file...',
-        },
+        ...(Platform.OS === 'android' && {
+          addAndroidDownloads: {
+            useDownloadManager: true,
+            notification: true,
+            path,
+            description: 'Downloading file...',
+          },
+        }),
       })
-      .fetch('GET', fileUrl)
-      .then((res) => {
-        Alert.alert('Success', `File downloaded to ${res.path()}`);
-      })
-      .catch((error) => {
-        console.error('Download error:', error);
-        Alert.alert('Error', 'Failed to download file. Please try again.');
-      });
-    } catch (err) {
-      console.warn(err);
+        .fetch('GET', fileUrl);
+      Alert.alert('Success', `File downloaded to ${path}`);
+    } catch (error) {
+      console.error('Download error:', error);
+      Alert.alert('Error', 'Failed to download file. Please try again.');
     }
   };
 
