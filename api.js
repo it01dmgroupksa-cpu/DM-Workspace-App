@@ -468,7 +468,7 @@ export const hasCheckedOutToday = async (employeeID, timeCategory = 'Regular Tim
 };
 
 export const uploadImageToImgur = async (base64Image, fileName) => {
-  const IMGUR_CLIENT_ID = '96c24c758d8b494';
+  const IMGUR_CLIENT_ID = 'fe1582d946cf0ee';
 
   try {
     const response = await fetch('https://api.imgur.com/3/image', {
