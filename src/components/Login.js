@@ -56,17 +56,10 @@ const handleLogin = async () => {
             }),
           );
 
-          console.log('Shift Details:', shiftDetails);
-
-          // Save shift details in async storage
           await AsyncStorage.setItem(
             'shiftDetails',
             JSON.stringify(shiftDetails),
           );
-
-          console.log('Shift details saved to async storage');
-        } else {
-          console.log('No Shift Details Found');
         }
 
         setEmployeeDetails(employeeDetails);
@@ -79,7 +72,7 @@ const handleLogin = async () => {
       );
     }
   } catch (error) {
-    console.error('Login error:', error);
+    console.error("Login request failed.");
     if (error.response && error.response.data) {
       const errorData = error.response.data;
       if (

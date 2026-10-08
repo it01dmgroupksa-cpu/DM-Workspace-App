@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,11 +20,12 @@ const AssignedTasksView = () => {
   const [scrollEnabled, setScrollEnabled] = useState(true); // To handle scroll interaction
   const navigation = useNavigation();
 
-  useEffect(() => {
-    fetchTasks();
-  }, []);
+  const fetchTasks = useCallback(async () => {
+    if (!employeeDetails?.name) {
+      setLoading(false);
+      return;
+    }
 
-  const fetchTasks = async () => {
     try {
       setLoading(true);
       const assignedTasks = await getAssignedTasks(employeeDetails.name);
@@ -40,11 +41,15 @@ const AssignedTasksView = () => {
       setTasks(sortedTasks);
     } catch (error) {
       Alert.alert('Error', 'Failed to fetch tasks. Please try again later.');
-      console.error('Error fetching tasks:', error);
+      console.error("Error fetching tasks:");
     } finally {
       setLoading(false);
     }
-  };
+  }, [employeeDetails?.name]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
 
   const navigateToCreateTasks = () => {
     navigation.navigate('TaskManagement');
@@ -78,7 +83,7 @@ const AssignedTasksView = () => {
       await fetchTasks();
     } catch (error) {
       Alert.alert('Error', 'Failed to update task. Please try again.');
-      console.error('Error updating task:', error);
+      console.error("Error updating task:");
     }
   };
 
@@ -91,7 +96,7 @@ const AssignedTasksView = () => {
       await fetchTasks();
     } catch (error) {
       Alert.alert('Error', 'Failed to update task result. Please try again.');
-      console.error('Error updating task result:', error);
+      console.error("Error updating task result:");
     }
   };
 

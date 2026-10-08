@@ -7,7 +7,7 @@ import React from 'react';
 import App from '../App';
 
 // Note: import explicitly to use the types shipped with jest.
-import {afterEach, it} from '@jest/globals';
+import {afterEach, it, jest} from '@jest/globals';
 
 // Note: test renderer must be required after react-native.
 import renderer, {act, type ReactTestRenderer} from 'react-test-renderer';

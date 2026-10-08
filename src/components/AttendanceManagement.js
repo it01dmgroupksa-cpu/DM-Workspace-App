@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {Picker} from '@react-native-picker/picker';
 import {CameraView, useCameraPermissions} from 'expo-camera';
 import * as Location from 'expo-location';
@@ -112,8 +113,24 @@ const AttendanceManagement = () => {
   }, [employeeDetails, navigation]);
   
 
-  const handleLogout = () => {
-    setEmployeeDetails(null); // Clear employee details from context
+  const handleLogout = async () => {
+    let shiftDetailsCleanupFailed = false;
+
+    try {
+      await AsyncStorage.removeItem('shiftDetails');
+    } catch (error) {
+      shiftDetailsCleanupFailed = true;
+      console.error("Failed to clear cached shift details during logout:");
+    }
+
+    setEmployeeDetails(null);
+
+    if (shiftDetailsCleanupFailed) {
+      Alert.alert(
+        'Signed out',
+        'Cached shift details could not be cleared. Clear app storage before sharing this device.',
+      );
+    }
   };
 
   const showLogoutModal = () => {
@@ -139,7 +156,7 @@ const AttendanceManagement = () => {
 
       setHasLocationPermission(true);
     } catch (error) {
-      console.error('Failed to request location permission:', error);
+      console.error("Failed to request location permission:");
       setStatusMessage(
         'Unable to request location permission. Please try again.',
       );
@@ -152,12 +169,10 @@ const AttendanceManagement = () => {
   const fetchBranchLocations = async () => {
     try {
       const locations = await getBranchLocations();
-      console.log('Fetched branch locations:', locations);
       setBranchLocations(locations);
       setIsBranchLocationsReady(true);
-      console.log('Branch locations are ready');
     } catch (error) {
-      console.error('Failed to fetch branch locations:', error);
+      console.error("Failed to fetch branch locations:");
       setStatusMessage(
         'Failed to fetch office locations. Please try again later.',
       );
@@ -170,19 +185,13 @@ const AttendanceManagement = () => {
     NetInfo.fetch().then(state => {
       setNetworkStatus(state);
     }).catch(error => {
-      console.error('Failed to fetch network status:', error);
+      console.error("Failed to fetch network status:");
     });
   };
 
   const updateDistanceToOffice = useCallback(
     currentLocation => {
-      console.log('Starting distance calculation...');
-      console.log('Current location:', currentLocation);
-      console.log('Branch locations ready:', isBranchLocationsReady);
-      console.log('Number of branch locations:', branchLocations.length);
-
       if (!isBranchLocationsReady) {
-        console.log('Branch locations not ready yet');
         return;
       }
 
@@ -191,7 +200,7 @@ const AttendanceManagement = () => {
         typeof currentLocation.latitude !== 'number' ||
         typeof currentLocation.longitude !== 'number'
       ) {
-        console.error('Invalid location object:', currentLocation);
+        console.error("Invalid current location received.");
         setLocationStatus('error');
         return;
       }
@@ -206,7 +215,7 @@ const AttendanceManagement = () => {
           const branchLong = parseFloat(branch.custom_longitude);
 
           if (isNaN(branchLat) || isNaN(branchLong)) {
-            console.error(`Invalid coordinates for branch ${index}:`, branch);
+            console.error("Diagnostic details omitted to protect application data.");
             return;
           }
 
@@ -217,24 +226,21 @@ const AttendanceManagement = () => {
             branchLong,
           );
 
-          console.log(`Distance to ${branch.branch_location}: ${distance} km`);
-
           if (distance < nearestDistance) {
             nearestDistance = distance;
           }
         });
 
         if (nearestDistance === Infinity) {
-          console.error('No valid distances calculated');
+          console.error("No valid distances calculated");
           setLocationStatus('error');
           return;
         }
 
-        console.log('Final nearest distance:', nearestDistance);
         setDistanceToOffice(nearestDistance);
         setLocationStatus('ready');
       } catch (error) {
-        console.error('Error during distance calculation:', error);
+        console.error("Failed to calculate distance to branch locations.");
         setLocationStatus('error');
       }
     },
@@ -242,12 +248,10 @@ const AttendanceManagement = () => {
   );
 
   const getLocation = useCallback(async () => {
-    console.log('Getting location...');
     setLocationStatus('detecting');
     setLocationError(null);
 
     if (branchLocations.length === 0) {
-      console.log('Waiting for branch locations...');
       return;
     }
 
@@ -267,7 +271,7 @@ const AttendanceManagement = () => {
       setIsDetectingLocation(false);
       updateDistanceToOffice({latitude, longitude});
     } catch (error) {
-      console.error('Location error:', error);
+      console.error("Failed to retrieve the current location.");
       setLocationStatus('error');
       setLocationError(error.message || 'Unknown error occurred');
 
@@ -348,7 +352,7 @@ const AttendanceManagement = () => {
       );
 
       if (!assignedBranch) {
-        console.error('Assigned branch not found');
+        console.error("Assigned branch not found");
         return false;
       }
 
@@ -444,7 +448,7 @@ const AttendanceManagement = () => {
       setIsStatusSuccess(true);
       setShowStatusModal(true);
     } catch (error) {
-      console.error('Attendance Error:', error.response?.data || error.message);
+      console.error("Attendance submission failed.");
       setStatusMessage(
         `${attendanceType === 'checkIn' ? 'Check-in' : 'Check-out'} failed: ${
           error.response?.data?.message || error.message
@@ -466,7 +470,7 @@ const AttendanceManagement = () => {
 
   const captureImage = useCallback(async () => {
     if (!cameraRef.current) {
-      console.error('Camera reference is not available');
+      console.error("Camera reference is not available");
       Alert.alert('Error', 'Camera is not ready yet.');
       return null;
     }
@@ -556,10 +560,7 @@ const AttendanceManagement = () => {
         setAttendanceType(type);
         setShowConfirmModal(true);
       } catch (error) {
-        console.error(
-          'Attendance Error:',
-          error.response?.data || error.message,
-        );
+        console.error("Attendance Error:");
         setStatusMessage(
           `${type === 'checkIn' ? 'Check-in' : 'Check-out'} failed: ${
             error.response?.data?.message || error.message
@@ -725,10 +726,7 @@ const AttendanceManagement = () => {
                         );
                       }
                     } catch (error) {
-                      console.error(
-                        'Failed to request camera permission:',
-                        error,
-                      );
+                      console.error("Failed to request camera permission:");
                       Alert.alert(
                         'Error',
                         'Unable to request camera permission.',

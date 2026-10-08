@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -112,24 +112,15 @@ const SalesOutstandingReport = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const invoicesPerPage = 10;
 
-  useEffect(() => {
-    fetchSalesPerson();
+  const calculateTotalOutstanding = useCallback((invoiceList) => {
+    const total = invoiceList.reduce(
+      (sum, invoice) => sum + parseFloat(invoice.outstanding_amount || 0),
+      0,
+    );
+    setTotalOutstanding(total);
   }, []);
 
-  const fetchSalesPerson = async () => {
-    try {
-      setIsLoading(true);
-      const name = await getSalesPersonNameByEmployeeID(employeeDetails.name);
-      setSalesPersonName(name);
-      fetchInvoices(name);
-    } catch (error) {
-      console.error('Error fetching salesperson:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchInvoices = async (salesPerson) => {
+  const fetchInvoices = useCallback(async salesPerson => {
     setIsLoading(true);
     try {
       const data = await getUnpaidOverdueInvoices(salesPerson);
@@ -137,16 +128,32 @@ const SalesOutstandingReport = () => {
       calculateTotalOutstanding(data);
       setCurrentPage(1);
     } catch (error) {
-      console.error('Error fetching invoices:', error);
+      console.error("Error fetching invoices:");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [calculateTotalOutstanding]);
 
-  const calculateTotalOutstanding = (invoices) => {
-    const total = invoices.reduce((sum, invoice) => sum + parseFloat(invoice.outstanding_amount || 0), 0);
-    setTotalOutstanding(total);
-  };
+  const fetchSalesPerson = useCallback(async () => {
+    if (!employeeDetails?.name) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const name = await getSalesPersonNameByEmployeeID(employeeDetails.name);
+      setSalesPersonName(name);
+      await fetchInvoices(name);
+    } catch (error) {
+      console.error("Error fetching salesperson:");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [employeeDetails?.name, fetchInvoices]);
+
+  useEffect(() => {
+    fetchSalesPerson();
+  }, [fetchSalesPerson]);
 
   const handleSearch = async () => {
     setIsLoading(true);
@@ -155,7 +162,7 @@ const SalesOutstandingReport = () => {
       setInvoices(searchResults);
       setCurrentPage(1);
     } catch (error) {
-      console.error('Error searching invoices:', error);
+      console.error("Error searching invoices:");
     } finally {
       setIsLoading(false);
     }
@@ -168,7 +175,7 @@ const SalesOutstandingReport = () => {
       setSelectedInvoice(invoiceDetails);
       setIsModalVisible(true);
     } catch (error) {
-      console.error('Error fetching invoice details:', error);
+      console.error("Error fetching invoice details:");
     } finally {
       setIsLoading(false);
     }
@@ -317,33 +324,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  tableContainer: {
-    borderWidth: 1,
-    borderColor: '#E0E7FF',
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-    marginBottom: 20,
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#F0F4FF',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E7FF',
-  },
   tableHeaderText: {
     flex: 1,
     fontSize: 16,
     fontWeight: 'bold',
     color: '#153156',
     textAlign: 'center',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E7FF',
   },
   tableRowText: {
     flex: 1,

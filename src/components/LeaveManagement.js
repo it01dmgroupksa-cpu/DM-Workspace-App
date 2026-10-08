@@ -59,7 +59,7 @@ const LeaveManagement = () => {
       const requests = await getLeaveRequests(employeeDetails.name);
       setLeaveRequests(requests.sort((a, b) => new Date(b.from_date) - new Date(a.from_date)));
     } catch (error) {
-      console.error('Error fetching leave requests:', error);
+      console.error("Error fetching leave requests:");
       Alert.alert('Error', 'Failed to fetch leave requests.');
     }
   }, [employeeDetails?.name]);
@@ -95,7 +95,7 @@ const LeaveManagement = () => {
       const errorMessage = error.response?.data?._server_messages
         ? JSON.parse(error.response.data._server_messages).map(msg => JSON.parse(msg).message).join('\n')
         : error.message;
-      console.error('Error requesting leave:', errorMessage);
+      console.error("Error requesting leave:");
       Alert.alert('Error', `Failed to submit leave request. ${errorMessage}`);
     }
   };
@@ -115,7 +115,7 @@ const LeaveManagement = () => {
         });
       }
     } catch (error) {
-      console.error('Failed to select leave attachment:', error);
+      console.error("Failed to select leave attachment:");
       Alert.alert('Error', 'Failed to select the attachment.');
     }
   };

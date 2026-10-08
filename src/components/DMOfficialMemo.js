@@ -33,7 +33,7 @@ const DMOfficialMemo = () => {
       setMemos(data);
       setIsLoading(false);
     } catch (error) {
-      console.error('Error fetching memos:', error);
+      console.error("Error fetching memos:");
       setIsLoading(false);
     }
   };
@@ -45,7 +45,7 @@ const DMOfficialMemo = () => {
       setSelectedMemo(memoDetails);
       setIsModalVisible(true);
     } catch (error) {
-      console.error('Error fetching memo details:', error);
+      console.error("Error fetching memo details:");
     } finally {
       setIsLoading(false);
     }

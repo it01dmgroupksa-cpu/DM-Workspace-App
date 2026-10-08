@@ -24,7 +24,7 @@ api.interceptors.request.use(clearExpectHeader, error => Promise.reject(error));
 
 export const login = async (email, password) => {
   try {
-    console.log('Attempting to login with email:', email); // Log email
+     // Log email
     
     const response = await api.post(
       'login',
@@ -40,7 +40,7 @@ export const login = async (email, password) => {
     );
     
     // Log the entire response for debugging
-    console.log('Login response:', response.data); 
+
     
     // Check if response contains a 'Logged In' message
     const { message } = response.data;
@@ -48,15 +48,15 @@ export const login = async (email, password) => {
     if (message === 'Logged In') {
       return response.data; // return the response data, you don't need the token
     } else {
-      console.error('Unexpected response format:', response.data);
+      console.error("Unexpected response format:");
       return { message: 'Login Failed' };
     }
   } catch (error) {
     // Log error details for debugging
     if (error.response) {
-      console.error('Login error response:', error.response.data);
+      console.error("Login error response:");
     } else {
-      console.error('Login error:', error.message);
+      console.error("Login error:");
     }
     throw error; // Re-throw the error to be handled in the calling function
   }
@@ -67,7 +67,7 @@ export const login = async (email, password) => {
 export const logout = async () => {
   try {
     const response = await api.post('logout');
-    console.log('Logout response:', response.data);
+
 
     // Clear local storage (AsyncStorage) after logout
     await AsyncStorage.removeItem('userToken');
@@ -75,7 +75,7 @@ export const logout = async () => {
 
     return response.data;
   } catch (error) {
-    console.error('Error logging out:', error.response ? error.response.data : error.message);
+    console.error("Error logging out:");
     throw error;
   }
 };
@@ -100,10 +100,7 @@ export const requestLeave = async leaveRequest => {
     );
     return response.data;
   } catch (error) {
-    console.error(
-      'Error details:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error details:");
     throw error;
   }
 };
@@ -140,7 +137,7 @@ export const getEmployeeDetailsByUsername = async username => {
       },
     });
 
-    console.log('employee details:', response.data.message);
+
     return response.data.message;
     
   } catch (error) {
@@ -161,11 +158,11 @@ export const getEmployeeShiftDetails = async username => {
       },
     });
 
-    console.log('shift details:', response.data.message);
+
     return response.data.message;
     
   } catch (error) {
-    console.error('Error Fetching Shift Details:', error.response ? error.response.data : error.message);
+    console.error("Error Fetching Shift Details:");
     throw error;
   }
 };
@@ -174,7 +171,7 @@ const getShiftEndForOffice = async () => {
   try {
     const shiftDetails = await AsyncStorage.getItem('shiftDetails');
     if (!shiftDetails) {
-      console.error('No shift details found in AsyncStorage');
+      console.error("No shift details found in AsyncStorage");
       return null;
     }
 
@@ -182,14 +179,14 @@ const getShiftEndForOffice = async () => {
     const officeShift = parsedDetails.find((shift) => shift.shift_type === 'Office');
     return officeShift?.shift_end || null;
   } catch (error) {
-    console.error('Error retrieving shift details:', error);
+    console.error("Error retrieving shift details:");
     return null;
   }
 };
 
 export const checkInAtTime = async (employeeID, location, deviceID, imageLink, timeCategory = 'Regular Time', customTime) => {
   try {
-    console.log('Performing Check-In at:', customTime);
+
     const response = await api.post(
       '/frappe.client.insert',
       {
@@ -214,17 +211,17 @@ export const checkInAtTime = async (employeeID, location, deviceID, imageLink, t
       },
     );
 
-    console.log('Check-In at specified time successful:', response.data.message);
+
     return response.data;
   } catch (error) {
-    console.error('Error performing Check-In at specified time:', error);
+    console.error("Error performing Check-In at specified time:");
     throw error;
   }
 };
 
 export const checkOutAtTime = async (employeeID, location, deviceID, imageLink, timeCategory = 'Regular Time', customTime) => {
   try {
-    console.log('Performing Check-Out at:', customTime);
+
     const response = await api.post(
       '/frappe.client.insert',
       {
@@ -249,10 +246,10 @@ export const checkOutAtTime = async (employeeID, location, deviceID, imageLink, 
       },
     );
 
-    console.log('Check-Out at specified time successful:', response.data.message);
+
     return response.data;
   } catch (error) {
-    console.error('Error performing Check-Out at specified time:', error);
+    console.error("Error performing Check-Out at specified time:");
     throw error;
   }
 };
@@ -262,7 +259,7 @@ export const handlePreviousDayCheck = async (employeeID) => {
   try {
     const shiftEnd = await getShiftEndForOffice();
     if (!shiftEnd) {
-      console.error('Shift end time not found for Office');
+      console.error("Shift end time not found for Office");
       return;
     }
 
@@ -298,14 +295,14 @@ export const handlePreviousDayCheck = async (employeeID) => {
     if (normalCheckIn && overtimeCheckOut && !normalCheckOut && !overtimeCheckIn) {
       // Perform Normal Checkout at shift end
       const shiftEndTime = moment(`${moment().subtract(1, 'day').format('YYYY-MM-DD')} ${shiftEnd}`, 'YYYY-MM-DD HH:mm:ss').format('YYYY-MM-DD HH:mm:ss');
-      console.log('Performing Normal Checkout at shift end:', shiftEndTime);
+
 
       await checkOutAtTime(employeeID, { latitude: 0, longitude: 0 }, 'AUTO_CHECK', '', 'Regular Time', shiftEndTime);
-      console.log('Performed Normal Checkout automatically at shift end.');
+
 
       // Perform Overtime Check-In at the same time
       await checkInAtTime(employeeID, { latitude: 0, longitude: 0 }, 'AUTO_CHECK', '', 'Over Time', shiftEndTime);
-      console.log('Performed Overtime Check-In automatically at shift end.');
+
     }
 
     // Check for Lunch OT
@@ -316,22 +313,22 @@ export const handlePreviousDayCheck = async (employeeID) => {
       const lunchOTCheckInTime = moment(lunchOTCheckIn.time);
       const lunchOTCheckOutTime = lunchOTCheckInTime.add(1, 'hour').format('YYYY-MM-DD HH:mm:ss');
 
-      console.log('Performing Lunch OT Checkout at:', lunchOTCheckOutTime);
+
 
       // Perform Lunch OT Checkout 1 hour after check-in
       await checkOutAtTime(employeeID, { latitude: 0, longitude: 0 }, 'AUTO_CHECK', '', 'Lunch OT', lunchOTCheckOutTime);
-      console.log('Performed Lunch OT Checkout automatically after 1 hour of check-in.');
+
     }
   } catch (error) {
-    console.error('Error handling previous day checks:', error);
+    console.error("Error handling previous day checks:");
   }
 };
 
 
 export const checkIn = async (employeeID, location, deviceID, imageLink, timeCategory = 'Regular Time') => {
   const currentTime = moment().format('YYYY-MM-DD HH:mm:ss');
-  console.log('latitude', location.latitude)
-  console.log('longitude', location.longitude)
+
+
   try {
     const response = await api.post(
       '/frappe.client.insert',
@@ -357,7 +354,7 @@ export const checkIn = async (employeeID, location, deviceID, imageLink, timeCat
       },
     );
 
-    console.log('Check in successful:', response.data.message);
+
     return response.data;
   } catch (error) {
     throw error;
@@ -401,8 +398,8 @@ export const hasCheckedInToday = async (employeeID, timeCategory = 'Regular Time
   const todayStart = moment().startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
   const tomorrowStart = moment().add(1, 'day').startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
 
-  console.log('todayStart', todayStart);
-  console.log('tomorrowStart', tomorrowStart);
+
+
 
   try {
     const response = await api.get('/frappe.client.get_list', {
@@ -424,7 +421,7 @@ export const hasCheckedInToday = async (employeeID, timeCategory = 'Regular Time
     });
 
     const checkIns = response.data.message;
-    console.log('hasCheckedInToday', checkIns.length);
+
 
     return checkIns.length > 0;
   } catch (error) {
@@ -436,8 +433,8 @@ export const hasCheckedOutToday = async (employeeID, timeCategory = 'Regular Tim
   const todayStart = moment().startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
   const tomorrowStart = moment().add(1, 'day').startOf('day').add(5, 'hours').format('YYYY-MM-DD HH:mm:ss');
 
-  console.log('todayStart', todayStart);
-  console.log('tomorrowStart', tomorrowStart);
+
+
 
   try {
     const response = await api.get('/frappe.client.get_list', {
@@ -459,7 +456,7 @@ export const hasCheckedOutToday = async (employeeID, timeCategory = 'Regular Tim
     });
 
     const checkOuts = response.data.message;
-    console.log('hasCheckedOutToday', checkOuts.length);
+
 
     return checkOuts.length > 0;
   } catch (error) {
@@ -487,13 +484,13 @@ export const uploadImageToImgur = async (base64Image, fileName) => {
     const data = await response.json();
 
     if (data.success) {
-      console.log('Image uploaded successfully:', data.data.link);
+
       return data.data.link;
     } else {
       throw new Error(data.data.error);
     }
   } catch (error) {
-    console.error('Error uploading image to Imgur:', error);
+    console.error("Error uploading image to Imgur:");
     throw error;
   }
 };
@@ -526,10 +523,7 @@ export const requestQuotation = async quotationRequest => {
     });
     return response.data;
   } catch (error) {
-    console.error(
-      'Error details:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error details:");
     throw error;
   }
 };
@@ -625,10 +619,10 @@ export const getWarehouses = async () => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('Fetched Warehouses:', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching warehouses:', error);
+    console.error("Error fetching warehouses:");
     throw error;
   }
 };
@@ -649,7 +643,7 @@ export const getSeriesOptions = async () => {
 
 export const getEmployeeAttendanceSettings = async employeeID => {
   try {
-    console.log('Fetching employee attendance settings for:', employeeID);
+
     const response = await api.get('/frappe.client.get', {
       params: {
         doctype: 'Employee',
@@ -666,10 +660,10 @@ export const getEmployeeAttendanceSettings = async employeeID => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('Employee attendance settings:', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching attendance settings:', error);
+    console.error("Error fetching attendance settings:");
     throw error;
   }
 };
@@ -691,10 +685,10 @@ export const getBranchLocations = async () => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('Branches:', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error('Failed to fetch branch locations:', error);
+    console.error("Failed to fetch branch locations:");
     throw error;
   }
 };
@@ -719,7 +713,7 @@ export const requestSalesPersonQuotation = async quotationRequest => {
 
 export const submitSalesPersonRFQ = async rfq => {
   try {
-    console.log('rfq being sent', rfq)
+
     const response = await api.post('/frappe.client.insert', {
       doc: {
         doctype: 'Sales Person RFQ',
@@ -731,10 +725,7 @@ export const submitSalesPersonRFQ = async rfq => {
     });
     return response.data;
   } catch (error) {
-    console.error(
-      'Error submitting Sales Person RFQ:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error submitting Sales Person RFQ:");
     throw error;
   }
 };
@@ -770,7 +761,7 @@ export const getCustomers = async () => {
     });
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching customers:', error);
+    console.error("Error fetching customers:");
     throw error;
   }
 };
@@ -787,7 +778,7 @@ export const getItemsList = async () => {
 
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching items:', error);
+    console.error("Error fetching items:");
     throw error; // Ensure this propagates the error if it occurs
   }
 };
@@ -821,10 +812,7 @@ export const getAllEmployees = async () => {
     });
     return response.data.message;
   } catch (error) {
-    console.error(
-      'Error fetching employees:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error fetching employees:");
     throw error;
   }
 };
@@ -853,13 +841,10 @@ export const getEmployeesByDepartment = async department => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('Filtered Employees', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error(
-      'Error fetching employees by department:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error fetching employees by department:");
     throw error;
   }
 };
@@ -896,10 +881,10 @@ export const searchEmployees = async query => {
       },
     });
 
-    console.log('Filtered Employees', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error('Error searching employees:', error);
+    console.error("Error searching employees:");
     throw error;
   }
 };
@@ -927,7 +912,7 @@ export const getEmployeeById = async employeeId => {
     });
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching employee details:', error);
+    console.error("Error fetching employee details:");
     throw error;
   }
 };
@@ -955,7 +940,7 @@ export const sortEmployees = async (sortBy, sortOrder) => {
     });
     return response.data.message;
   } catch (error) {
-    console.error('Error sorting employees:', error);
+    console.error("Error sorting employees:");
     throw error;
   }
 };
@@ -974,7 +959,7 @@ export const getDepartments = async () => {
     });
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching departments:', error);
+    console.error("Error fetching departments:");
     throw error;
   }
 };
@@ -999,7 +984,7 @@ export const getAllTasks = async () => {
     });
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching tasks:', error);
+    console.error("Error fetching tasks:");
     throw error;
   }
 };
@@ -1016,10 +1001,10 @@ export const getTaskDetails = async taskId => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('getTaskDetails', response.data.message)
+
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching task details:', error);
+    console.error("Error fetching task details:");
     throw error;
   }
 };
@@ -1071,10 +1056,7 @@ export const createTask = async taskData => {
 
     return response.data;
   } catch (error) {
-    console.error(
-      'Error creating task:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error creating task:");
     throw error;
   }
 };
@@ -1094,7 +1076,7 @@ export const updateTask = async (taskId, taskData) => {
     });
     return response.data;
   } catch (error) {
-    console.error('Error updating task:', error);
+    console.error("Error updating task:");
     throw error;
   }
 };
@@ -1113,7 +1095,7 @@ export const deleteTask = async taskId => {
     });
     return response.data;
   } catch (error) {
-    console.error('Error deleting task:', error);
+    console.error("Error deleting task:");
     throw error;
   }
 };
@@ -1131,10 +1113,7 @@ export const getTaskCategories = async () => {
     });
     return response.data.message;
   } catch (error) {
-    console.error(
-      'Error fetching task categories:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error fetching task categories:");
     throw error;
   }
 };
@@ -1163,15 +1142,15 @@ export const getAssignedTasks = async current_user => {
     
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching assigned tasks:', error.response ? error.response.data : error.message);
+    console.error("Error fetching assigned tasks:");
     throw error;
   }
 };
 export const updateTaskDetail = async (taskId, detailId, updateData) => {
   try {
-    console.log('Fetching current task details for taskId:', taskId);
+
     let currentTask = await getTaskDetails(taskId); // Fetch the current task details
-    console.log('Current task details:', JSON.stringify(currentTask, null, 2));
+
 
     // Find the index of the task detail to update
     const detailIndex = currentTask.task_details.findIndex(detail => detail.name === detailId);
@@ -1185,29 +1164,29 @@ export const updateTaskDetail = async (taskId, detailId, updateData) => {
       ...updateData,
     };
 
-    console.log('Updated task details:', JSON.stringify(currentTask.task_details, null, 2));
+
 
     // First attempt to save with ignore_version: true
-    console.log('Sending update request to API');
+
     const response = await saveTaskDetailsWithIgnoreVersion(currentTask, taskId);
-    console.log('API response:', JSON.stringify(response.data, null, 2));
+
     return response.data;
 
   } catch (error) {
     // Check if the error is a timestamp mismatch error
     if (error.response?.data?.exc_type === 'TimestampMismatchError') {
-      console.warn('Timestamp mismatch detected. Fetching latest version...');
+      console.warn("Timestamp mismatch detected. Fetching latest version...");
       return handleTimestampMismatch(taskId, detailId, updateData);
     } else {
-      console.error('Error updating task detail:', error);
+      console.error("Error updating task detail:");
 
       // Additional logging for 417 errors
       if (error.response?.status === 417) {
-        console.error('Validation or API-specific issue:', error.response?.data);
+        console.error("Validation or API-specific issue:");
         alert('There was a validation error. Please check that all required fields are filled and correctly formatted.');
       }
 
-      console.error('Error response:', error.response ? JSON.stringify(error.response.data, null, 2) : 'No response data');
+      console.error("Error response:");
       throw error;
     }
   }
@@ -1230,7 +1209,7 @@ const handleTimestampMismatch = async (taskId, detailId, updateData) => {
   try {
     // Fetch the latest document after timestamp mismatch
     const latestTask = await getTaskDetails(taskId);
-    console.log('Latest task details:', JSON.stringify(latestTask, null, 2));
+
 
     // Find the task detail to update in the latest fetched document
     const detailIndex = latestTask.task_details.findIndex(detail => detail.name === detailId);
@@ -1244,19 +1223,19 @@ const handleTimestampMismatch = async (taskId, detailId, updateData) => {
       ...updateData,
     };
 
-    console.log('Updated task details after re-fetch:', JSON.stringify(latestTask.task_details, null, 2));
+
 
     // Retry the update with the latest task details
     const response = await saveTaskDetailsWithIgnoreVersion(latestTask, taskId);
-    console.log('API response after retry:', JSON.stringify(response.data, null, 2));
+
     return response.data;
 
   } catch (error) {
-    console.error('Error retrying task detail update after timestamp mismatch:', error);
+    console.error("Error retrying task detail update after timestamp mismatch:");
 
     // Logging and handling the 417 error
     if (error.response?.status === 417) {
-      console.error('Failed with 417 status code:', error.response?.data);
+      console.error("Failed with 417 status code:");
       alert('Document update failed due to a validation error. Please ensure all required fields are correctly filled and retry.');
     }
     
@@ -1278,10 +1257,7 @@ export const getTaskEmployeeDivision = async () => {
     });
     return response.data.message;
   } catch (error) {
-    console.error(
-      'Error fetching task Employee Division:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error fetching task Employee Division:");
     throw error;
   }
 };
@@ -1297,13 +1273,10 @@ export const getTaskStatus = async () => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('Status Details:', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error(
-      'Error fetching task status:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error fetching task status:");
     throw error;
   }
 };
@@ -1320,13 +1293,10 @@ export const getBranches = async () => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('Branches Details:', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error(
-      'Failed to fetch branch locations:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Failed to fetch branch locations:");
     throw error;
   }
 };
@@ -1343,13 +1313,10 @@ export const getRFQBranches = async () => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('Branches Details:', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error(
-      'Failed to fetch branch locations:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Failed to fetch branch locations:");
     throw error;
   }
 };
@@ -1373,13 +1340,10 @@ export const getUserRFQs = async employeeID => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('User RFQs:', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error(
-      'Error fetching user RFQs:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error fetching user RFQs:");
     throw error;
   }
 };
@@ -1404,17 +1368,17 @@ export const downloadQuotationPDF = async quotationNo => {
       // 'Authorization': `Bearer ${api.defaults.headers.common['Authorization']}`,
     });
 
-    console.log('The file saved to ', res.path());
+
     return {success: true, path: res.path()};
   } catch (error) {
-    console.error('Error downloading PDF:', error);
+    console.error("Error downloading PDF:");
     throw error;
   }
 };
 
 export const getSalesPersonNameByEmployeeID = async employeeID => {
   try {
-    console.log('employeeID:',employeeID)
+
     const response = await api.get('/frappe.client.get_list', {
       params: {
         doctype: 'Sales Person',
@@ -1425,22 +1389,16 @@ export const getSalesPersonNameByEmployeeID = async employeeID => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('SalesPersonNameDetails:', response.data.message);
+
     if (response.data.message.length > 0) {
-      console.log(
-        'SalesPersonName:',
-        response.data.message[0].sales_person_name,
-      );
+
       return response.data.message[0].sales_person_name;
     } else {
-      console.warn('No sales person found for this employee ID');
+      console.warn("No sales person found for this employee ID");
       return null;
     }
   } catch (error) {
-    console.error(
-      'Error fetching sales person by employee ID:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error fetching sales person by employee ID:");
     throw error;
   }
 };
@@ -1466,13 +1424,10 @@ export const getEmployeePermissions = async employeeID => {
       },
     });
 
-    console.log('Employee npermission:', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error(
-      'Error fetching employee permissions:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error fetching employee permissions:");
     throw error;
   }
 };
@@ -1497,7 +1452,7 @@ export const getAllItems = async () => {
     });
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching items:', error.response ? error.response.data : error.message);
+    console.error("Error fetching items:");
     throw error;
   }
 };
@@ -1526,7 +1481,7 @@ export const getItemStockByWarehouse = async (itemCode) => {
       stock_uom: item.stock_uom,
     }));
   } catch (error) {
-    console.error('Error fetching item stock by warehouse:', error.response ? error.response.data : error.message);
+    console.error("Error fetching item stock by warehouse:");
     throw error;
   }
 };
@@ -1563,7 +1518,7 @@ export const searchItems = async (query) => {
 
     return response.data.message;
   } catch (error) {
-    console.error('Error searching items:', error.response ? error.response.data : error.message);
+    console.error("Error searching items:");
     throw error;
   }
 };
@@ -1590,10 +1545,10 @@ export const getUnpaidOverdueInvoices = async (salesPersonName) => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('getUnpaidOverdueInvoices', response.data.message)
+
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching unpaid or overdue invoices:', error.response ? error.response.data : error.message);
+    console.error("Error fetching unpaid or overdue invoices:");
     throw error;
   }
 };
@@ -1623,10 +1578,10 @@ export const searchInvoicesByCustomer = async (salesPersonName, customerQuery) =
         'Content-Type': 'application/json',
       },
     });
-    console.log('searchInvoicesByCustomer', response.data.message)
+
     return response.data.message;
   } catch (error) {
-    console.error('Error searching invoices:', error.response ? error.response.data : error.message);
+    console.error("Error searching invoices:");
     throw error;
   }
 };
@@ -1644,7 +1599,7 @@ export const getInvoiceDetails = async (invoiceID) => {
     });
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching invoice details:', error.response ? error.response.data : error.message);
+    console.error("Error fetching invoice details:");
     throw error;
   }
 };
@@ -1690,10 +1645,7 @@ export const createMaterialsRequest = async requestData => {
 
     return response.data;
   } catch (error) {
-    console.error(
-      'Error creating materials request:',
-      error.response ? error.response.data : error.message,
-    );
+    console.error("Error creating materials request:");
     throw new Error('Failed to create materials request. Please try again.');
   }
 };
@@ -1714,12 +1666,12 @@ export const getRequestTypes = async () => {
       const options = requestTypeField.options.split('\n');
       return options;
     } else {
-      console.warn('Request type field not found or not a Select field');
+      console.warn("Request type field not found or not a Select field");
       return [];
     }
 
   } catch (error) {
-    console.error('Error fetching request types:', error.response ? error.response.data : error.message);
+    console.error("Error fetching request types:");
     return [];
   }
 };
@@ -1749,10 +1701,10 @@ export const getDraftRequests = async (employeeName) => {
       })
     );
 
-    console.log('getDraftRequests:', draftRequests);
+
     return draftRequests;
   } catch (error) {
-    console.error('Error fetching draft requests:', error.response ? error.response.data : error.message);
+    console.error("Error fetching draft requests:");
     throw new Error('Failed to fetch draft requests. Please try again.');
   }
 };
@@ -1782,10 +1734,10 @@ export const getSubmittedRequests = async (employeeName) => {
       })
     );
 
-    console.log('getSubmittedRequests:', submittedRequests);
+
     return submittedRequests;
   } catch (error) {
-    console.error('Error fetching submitted requests:', error.response ? error.response.data : error.message);
+    console.error("Error fetching submitted requests:");
     return [];
   }
 };
@@ -1808,10 +1760,10 @@ export const submitDraftRequest = async (requestId) => {
       name: requestId,
       doc: doc
     });
-    console.log('SubmitDraftRequest:', response.data)
+
     return response.data;
   } catch (error) {
-    console.error('Error submitting draft request:', error.response ? error.response.data : error.message);
+    console.error("Error submitting draft request:");
     if (error.response && error.response.data && error.response.data.exception) {
       throw new Error(`Failed to submit draft request: ${error.response.data.exception}`);
     } else {
@@ -1846,10 +1798,10 @@ export const getDMOfficialMemos = async () => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('getDMOfficialMemos', response.data.message)
+
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching DM Official Memos:', error.response ? error.response.data : error.message);
+    console.error("Error fetching DM Official Memos:");
     throw error;
   }
 };
@@ -1867,7 +1819,7 @@ export const getDMOfficialMemoDetails = async (memoId) => {
     });
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching DM Official Memo details:', error.response ? error.response.data : error.message);
+    console.error("Error fetching DM Official Memo details:");
     throw error;
   }
 };
@@ -1892,13 +1844,13 @@ export const postPersonalEmployeeDetails = async (employeeName) => {
 
     // Now capture the response after the delay
     const insertResponse = await postRequest;
-    console.log('Employee details posted:', insertResponse.data);
+
 
     // Return the final response after the delay
     return insertResponse.data;
 
   } catch (error) {
-    console.error('Error posting employee details:', error.response ? error.response.data : error.message);
+    console.error("Error posting employee details:");
     throw error;
   }
 };
@@ -1937,15 +1889,15 @@ export const getUnitOptions = async () => {
         // Return the list of options after splitting by newline
         return unitField.options.split('\n');
       } else {
-        console.warn('Unit field not found or not a Select field');
+        console.warn("Unit field not found or not a Select field");
         return [];
       }
     } else {
-      console.warn('Item details field not found or not a Table field');
+      console.warn("Item details field not found or not a Table field");
       return [];
     }
   } catch (error) {
-    console.error('Error fetching unit options:', error.response?.data || error.message);
+    console.error("Error fetching unit options:");
     return [];
   }
 };
@@ -1972,7 +1924,7 @@ export const getEmployeesWithChatAccess = async () => {
     });
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching employees with chat access:', error);
+    console.error("Error fetching employees with chat access:");
     throw error;
   }
 };
@@ -2013,10 +1965,10 @@ export const getAssignedDeliveryTrips = async (employeeName) => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('getAssignedDeliveryTrips', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching assigned delivery trips:', error.response ? error.response.data : error.message);
+    console.error("Error fetching assigned delivery trips:");
     throw error;
   }
 };
@@ -2033,10 +1985,10 @@ export const getDeliveryStops = async (tripId) => {
         'Content-Type': 'application/json',
       },
     });
-    console.log('getDeliveryStops', response.data.message.delivery_stops);
+
     return response.data.message.delivery_stops;
   } catch (error) {
-    console.error('Error fetching delivery stops:', error.response ? error.response.data : error.message);
+    console.error("Error fetching delivery stops:");
     throw error;
   }
 };
@@ -2055,7 +2007,7 @@ export const updateSignedDeliveryNotes = async (tripId, imageUrls) => {
     });
     return response.data;
   } catch (error) {
-    console.error('Error updating signed delivery notes:', error.response ? error.response.data : error.message);
+    console.error("Error updating signed delivery notes:");
     throw error;
   }
 };
@@ -2070,7 +2022,7 @@ export const updateDeliveryTripStatus = async (tripId, status) => {
     });
     return response.data;
   } catch (error) {
-    console.error('Error updating delivery trip status:',error.response ? error.response.data : error.message);
+    console.error("Error updating delivery trip status:");
     throw error;
   }
 };
@@ -2088,7 +2040,7 @@ export const updateCustomDeliveredTime = async (tripId, deliveredTime) => {
     });
     return response.data;
   } catch (error) {
-    console.error('Error updating custom delivered time:', error);
+    console.error("Error updating custom delivered time:");
     throw error;
   }
 };
@@ -2110,10 +2062,10 @@ export const  getAllEmployeesDir= async () => {
       },
     });
 
-    console.log('Employee Directory Details:', response.data.message);
+
     return response.data.message;
   } catch (error) {
-    console.error('Error fetching employee directory details:', error.response ? error.response.data : error.message);
+    console.error("Error fetching employee directory details:");
     throw error;
   }
 };
@@ -2139,14 +2091,14 @@ export const getEmployeeByIdDir = async (employeeId) => {
     const employee = employeeDetails.find(emp => emp.employee_id === employeeId);
 
     if (!employee) {
-      console.warn(`Employee with ID ${employeeId} not found.`);
+      console.warn("Diagnostic details omitted to protect application data.");
       return null;
     }
 
-    console.log(`Employee Details for ID ${employeeId}:`, employee);
+
     return employee;
   } catch (error) {
-    console.error('Error fetching employee details:', error.response ? error.response.data : error.message);
+    console.error("Error fetching employee details:");
     throw error;
   }
 };

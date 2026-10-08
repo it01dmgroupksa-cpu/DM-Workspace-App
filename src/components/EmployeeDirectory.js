@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Linking } from 'react-native';
 import { getAllEmployeesDir } from '../../api';
 import { EmployeeContext } from '../context/EmployeeContext'; // Importing EmployeeContext
@@ -19,7 +19,7 @@ const EmployeeDirectory = () => {
 
   useEffect(() => {
     fetchEmployees();
-  }, []);
+  }, [fetchEmployees]);
 
   useEffect(() => {
     if (searchQuery) {
@@ -38,7 +38,7 @@ const EmployeeDirectory = () => {
     }
   }, [searchQuery, employees]);
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     try {
       const data = await getAllEmployeesDir();
       const filteredData = data.employee_details
@@ -48,9 +48,9 @@ const EmployeeDirectory = () => {
       setEmployees(filteredData);
       setFilteredEmployees(filteredData); // Also set this for the initial view
     } catch (error) {
-      console.error('Error fetching employees:', error);
+      console.error("Error fetching employees:");
     }
-  };
+  }, [loggedInEmployeeId]);
 
   const handleSearch = () => {
     // Search logic is handled by the useEffect above

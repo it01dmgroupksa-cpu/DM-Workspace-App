@@ -1,4 +1,4 @@
-import React, {useState, useContext, useEffect} from 'react';
+import React, {useState, useContext, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -43,23 +43,28 @@ const SalesPersonRFQ = () => {
     fetchCustomers();
     fetchItemsList();
     fetchUOMOptions();
-  }, []);
+  }, [fetchSalesPersonName]);
 
-  const fetchSalesPersonName = async () => {
+  const fetchSalesPersonName = useCallback(async () => {
+    if (!employeeDetails?.name) {
+      setSalesPersonName('');
+      return;
+    }
+
     try {
       const name = await getSalesPersonNameByEmployeeID(employeeDetails.name);
       setSalesPersonName(name || '');
     } catch (error) {
-      console.error('Error fetching Sales Person name:', error);
+      console.error("Error fetching Sales Person name:");
     }
-  };
+  }, [employeeDetails?.name]);
 
   const fetchCustomers = async () => {
     try {
       const customerList = await getCustomers();
       setCustomers(customerList);
     } catch (error) {
-      console.error('Error fetching customers:', error);
+      console.error("Error fetching customers:");
     }
   };
 
@@ -68,7 +73,7 @@ const SalesPersonRFQ = () => {
       const itemList = await getItemsList();
       setItemsList(itemList);
     } catch (error) {
-      console.error('Error fetching items:', error);
+      console.error("Error fetching items:");
     }
   };
 
@@ -77,7 +82,7 @@ const SalesPersonRFQ = () => {
       const uoms = await getUOMs();
       setUomOptions(uoms);
     } catch (error) {
-      console.error('Error fetching UOMs:', error);
+      console.error("Error fetching UOMs:");
     }
   };
 
@@ -131,7 +136,7 @@ const SalesPersonRFQ = () => {
         status: 'Draft',
       };
 
-      console.log('Submitting RFQ:', newRFQ);
+
       await submitSalesPersonRFQ(newRFQ);
       Alert.alert('Success', 'Sales Person RFQ submitted');
       setCustomerName('');
@@ -139,7 +144,7 @@ const SalesPersonRFQ = () => {
       setPricingSpecifications('');
       setItems([{item: '', quantity: '', uom: ''}]);
     } catch (error) {
-      console.error('Error submitting Sales Person RFQ:', error);
+      console.error("Error submitting Sales Person RFQ:");
       Alert.alert('Error', 'Failed to submit Sales Person RFQ');
     }
   };

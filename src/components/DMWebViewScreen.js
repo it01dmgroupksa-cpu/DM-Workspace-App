@@ -18,13 +18,12 @@ const DMWebViewScreen = () => {
 
   const handleLoadError = (syntheticEvent) => {
     const { nativeEvent } = syntheticEvent;
-    console.error('WebView load error:', nativeEvent);
+    console.error("ERP WebView failed to load.");
     setLoadError(nativeEvent.description || 'Unknown error');
   };
 
-  const handleHttpError = (syntheticEvent) => {
-    const { nativeEvent } = syntheticEvent;
-    console.warn('WebView HTTP error:', nativeEvent);
+  const handleHttpError = () => {
+    console.warn("ERP WebView returned an HTTP error.");
   };
 
   const handleNavigationStateChange = (navState) => {
@@ -88,7 +87,8 @@ const DMWebViewScreen = () => {
             'User-Agent': 'Chrome/91.0.4472.124'  
           }
         }}
-        mixedContentMode="always"
+        mixedContentMode="never"
+        onShouldStartLoadWithRequest={({url}) => url.startsWith('https://')}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         startInLoadingState={true}

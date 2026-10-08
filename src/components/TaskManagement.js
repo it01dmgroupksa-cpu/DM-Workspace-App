@@ -73,7 +73,7 @@ const TaskManagement = () => {
       const data = await getAllEmployees();
       setEmployees(data || []);
     } catch (error) {
-      console.error('Error fetching employees:', error);
+      console.error("Error fetching employees:");
     }
   };
 
@@ -82,7 +82,7 @@ const TaskManagement = () => {
       const data = await getTaskCategories();
       setCategories(data);
     } catch (error) {
-      console.error('Error fetching categories:', error);
+      console.error("Error fetching categories:");
     }
   };
 
@@ -91,7 +91,7 @@ const TaskManagement = () => {
       const data = await getTaskEmployeeDivision();
       setEmpDivison(data);
     } catch (error) {
-      console.error('Error fetching Divisons:', error);
+      console.error("Error fetching Divisons:");
     }
   };
 
@@ -100,7 +100,7 @@ const TaskManagement = () => {
       const data = await getTaskStatus();
       setStatus(data);
     } catch (error) {
-      console.error('Error fetching Status:', error);
+      console.error("Error fetching Status:");
     }
   };
 
@@ -109,7 +109,7 @@ const TaskManagement = () => {
       const data = await getBranches();
       setBranches(data);
     } catch (error) {
-      console.error('Error fetching branches:', error);
+      console.error("Error fetching branches:");
     }
   };
 
@@ -197,24 +197,23 @@ const TaskManagement = () => {
       }
     }
   
-    console.log("Submitting the following tasks:", JSON.stringify(tasks, null, 2));
-  
+
     try {
       for (let task of tasks) {
-        const response = await createTask(task);
-        console.log('Task created:', response);
+        await createTask(task);
+
       }
       Alert.alert('Success', 'All tasks submitted successfully');
       setTasks([]);
     } catch (error) {
-      console.error('Error submitting tasks:', error);
+      console.error("Error submitting tasks:");
       let errorMessage = 'Failed to submit tasks. Please try again.';
       if (error.response && error.response.data && error.response.data._server_messages) {
         try {
           const serverMessages = JSON.parse(error.response.data._server_messages);
           errorMessage = serverMessages[0].message || errorMessage;
         } catch (parseError) {
-          console.error('Error parsing server messages:', parseError);
+          console.error("Error parsing server messages:");
         }
       }
       Alert.alert('Error', errorMessage);

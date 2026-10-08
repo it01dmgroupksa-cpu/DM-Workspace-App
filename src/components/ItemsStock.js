@@ -31,7 +31,7 @@ const ItemsStock = () => {
       const data = await getAllItems();
       setItems(data);
     } catch (error) {
-      console.error('Error fetching items:', error);
+      console.error("Error fetching items:");
     } finally {
       setIsLoading(false);
     }
@@ -49,7 +49,7 @@ const ItemsStock = () => {
       setItems(searchResults);
       setCurrentPage(1);
     } catch (error) {
-      console.error('Error searching items:', error);
+      console.error("Error searching items:");
     } finally {
       setIsLoading(false);
     }
@@ -63,7 +63,7 @@ const ItemsStock = () => {
       setWarehouseStock(stockData);
       setIsModalVisible(true);
     } catch (error) {
-      console.error('Error fetching warehouse stock:', error);
+      console.error("Error fetching warehouse stock:");
     } finally {
       setIsLoading(false);
     }

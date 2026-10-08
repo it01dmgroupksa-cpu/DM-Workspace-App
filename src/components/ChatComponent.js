@@ -21,6 +21,7 @@ import RNBlobUtil from 'react-native-blob-util';
 import { EmployeeContext } from '../context/EmployeeContext';
 import { BackIcon, NewChatIcon, SendIcon, CloseIcon, PlusIcon, DownloadIcon} from './icons';
 import { format } from 'date-fns';
+import { getEmployeesWithChatAccess } from '../../api';
 
 const sb = new SendBird({ appId: 'F14632B9-78B6-4F39-B7BF-9E5770445DDA' });
 
@@ -34,7 +35,10 @@ const ChatComponent = () => {
   const [error, setError] = useState(null);
   const [employeesWithAccess, setEmployeesWithAccess] = useState([]);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [chatMode, setChatMode] = useState('direct');
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
+  const [groupName, setGroupName] = useState('');
+  const [chatActionLoading, setChatActionLoading] = useState(false);
   const flatListRef = useRef(null);
 
   const getChannelList = useCallback(() => {
@@ -43,17 +47,21 @@ const ChatComponent = () => {
     channelListQuery.order = 'latest_last_message';
     channelListQuery.limit = 15;
 
-    if (channelListQuery.hasNext) {
-      channelListQuery.next((channelList, error) => {
-        if (error) {
-          console.error('Channel list retrieval error:', error);
-          setError('Failed to retrieve chat rooms. Please try again later.');
-        } else {
-          setChannels(channelList);
-        }
-        setLoading(false);
-      });
+    if (!channelListQuery.hasNext) {
+      setChannels([]);
+      setLoading(false);
+      return;
     }
+
+    channelListQuery.next((channelList, error) => {
+      if (error) {
+        console.error("Channel list retrieval error:");
+        setError('Failed to retrieve chat rooms. Please try again later.');
+      } else {
+        setChannels(channelList);
+      }
+      setLoading(false);
+    });
   }, []);
 
   const connectToSendbird = useCallback(async () => {
@@ -62,11 +70,10 @@ const ChatComponent = () => {
     }
 
     try {
-      const user = await sb.connect(employeeDetails.name);
-      console.log('Connected to Sendbird', user);
+      await sb.connect(employeeDetails.name);
       getChannelList();
     } catch (error) {
-      console.error('Sendbird connection error:', error);
+      console.error("Sendbird connection error:");
       setError('Failed to connect to chat service. Please try again later.');
       Alert.alert(
         'Error',
@@ -75,40 +82,37 @@ const ChatComponent = () => {
     }
   }, [employeeDetails?.name, getChannelList]);
 
-  const fetchSendbirdUsers = useCallback(() => {
+  const fetchEmployeesWithAccess = useCallback(async () => {
     if (!employeeDetails?.name) {
       return;
     }
 
-    const userListQuery = sb.createApplicationUserListQuery();
-    userListQuery.limit = 100;
-
-    userListQuery.next((users, error) => {
-      if (error) {
-        console.error('Error fetching Sendbird users:', error);
-        Alert.alert('Error', 'Failed to fetch users. Please try again later.');
-      } else {
-        const filteredUsers = users.filter(
-          user =>
-            user.userId !== employeeDetails.name &&
-            user.userId !== 'sendbird_desk_agent_id_4e6ff725-b4b2-4b02-a54f-7087fae3ddc3',
-        );
-        setEmployeesWithAccess(filteredUsers);
-      }
-      setLoading(false);
-    });
+    try {
+      const employees = await getEmployeesWithChatAccess();
+      const eligibleEmployees = employees
+        .filter(employee => employee.name && employee.name !== employeeDetails.name)
+        .map(employee => ({
+          userId: employee.name,
+          nickname: employee.employee_name || employee.name,
+        }));
+      setEmployeesWithAccess(eligibleEmployees);
+    } catch (fetchError) {
+      console.error('Error fetching employees with chat access.');
+      Alert.alert('Error', 'Failed to load colleagues. Please try again later.');
+    }
   }, [employeeDetails?.name]);
 
   useEffect(() => {
     if (employeeDetails?.name) {
       connectToSendbird();
-      fetchSendbirdUsers();
+      fetchEmployeesWithAccess();
     }
-  }, [employeeDetails?.name, connectToSendbird, fetchSendbirdUsers]);
+  }, [employeeDetails?.name, connectToSendbird, fetchEmployeesWithAccess]);
 
   const handleChannelPress = (channel) => {
     channel.markAsRead();
     setCurrentChannel(channel);
+    setMessages([]);
     loadMessages(channel);
   };
 
@@ -123,7 +127,7 @@ const ChatComponent = () => {
       messageListParams,
       (messages, error) => {
         if (error) {
-          console.error('Message retrieval error:', error);
+          console.error("Message retrieval error:");
           setError('Failed to load messages. Please try again later.');
         } else {
           setMessages(messages);
@@ -141,7 +145,7 @@ const ChatComponent = () => {
 
     currentChannel.sendUserMessage(params, (message, error) => {
       if (error) {
-        console.error('Message send error:', error);
+        console.error("Message send error:");
         Alert.alert('Error', 'Failed to send message. Please try again.');
       } else {
         setMessages((prevMessages) => [...prevMessages, message]);
@@ -173,7 +177,7 @@ const ChatComponent = () => {
         type: file.mimeType || 'application/octet-stream',
       });
     } catch (error) {
-      console.error('File selection error:', error);
+      console.error("File selection error:");
       Alert.alert('Error', 'Failed to select file. Please try again.');
     }
   };
@@ -188,7 +192,7 @@ const ChatComponent = () => {
 
     currentChannel.sendFileMessage(params, (message, error) => {
       if (error) {
-        console.error('File send error:', error);
+        console.error("File send error:");
         Alert.alert('Error', 'Failed to send file. Please try again.');
       } else {
         setMessages((prevMessages) => [...prevMessages, message]);
@@ -197,45 +201,113 @@ const ChatComponent = () => {
     });
   };
 
-  const createNewChat = () => {
-    if (!selectedEmployee) return;
+  const closeNewChatModal = () => {
+    setShowNewChatModal(false);
+    setSelectedEmployeeIds([]);
+    setGroupName('');
+    setChatMode('direct');
+  };
 
-    const alreadyInChannel = channels.some((channel) =>
-      channel.members.some((member) => member.userId === selectedEmployee.userId)
-    );
-
-    if (alreadyInChannel) {
-      Alert.alert('Warning', 'You have already started a chat with this user.');
+  const toggleEmployeeSelection = (userId) => {
+    if (chatMode === 'direct') {
+      setSelectedEmployeeIds([userId]);
       return;
     }
 
-    const params = new sb.GroupChannelParams();
-    params.addUserIds([selectedEmployee.userId]);
-    params.name = `${employeeDetails.name}, ${selectedEmployee.userId}`;
-    params.isDistinct = true;
+    setSelectedEmployeeIds(current =>
+      current.includes(userId)
+        ? current.filter(selectedId => selectedId !== userId)
+        : [...current, userId],
+    );
+  };
 
-    sb.GroupChannel.createChannel(params, (channel, error) => {
-      if (error) {
-        console.error('Create channel error:', error);
-        Alert.alert('Error', 'Failed to create new chat. Please try again.');
+  const createNewChat = () => {
+    const isGroup = chatMode === 'group';
+    if (selectedEmployeeIds.length === 0) return;
+
+    if (isGroup && selectedEmployeeIds.length < 2) {
+      Alert.alert('Select colleagues', 'Choose at least two colleagues to create a group.');
+      return;
+    }
+
+    if (isGroup && !groupName.trim()) {
+      Alert.alert('Group name required', 'Enter a name for this group.');
+      return;
+    }
+
+    if (!isGroup) {
+      const existingChannel = channels.find(channel =>
+        channel.isDistinct &&
+        channel.members.length === 2 &&
+        channel.members.some(member => member.userId === selectedEmployeeIds[0]),
+      );
+      if (existingChannel) {
+        setCurrentChannel(existingChannel);
+        setMessages([]);
+        closeNewChatModal();
+        loadMessages(existingChannel);
+        return;
+      }
+    }
+
+    const params = new sb.GroupChannelParams();
+    params.addUserIds(selectedEmployeeIds);
+    params.isDistinct = !isGroup;
+    if (isGroup) {
+      params.name = groupName.trim();
+    }
+
+    setChatActionLoading(true);
+    sb.GroupChannel.createChannel(params, (channel, createError) => {
+      setChatActionLoading(false);
+      if (createError) {
+        console.error('Create chat channel failed.');
+        Alert.alert('Error', 'Could not create the chat. Please try again.');
       } else {
-        setChannels((prevChannels) => [...prevChannels, channel]);
+        setChannels(current => [channel, ...current.filter(item => item.url !== channel.url)]);
         setCurrentChannel(channel);
-        setShowNewChatModal(false);
-        setSelectedEmployee(null);
+        setMessages([]);
+        closeNewChatModal();
       }
     });
   };
 
-  const renderChannelItem = ({ item }) => {
-    const otherUserId = item.members.find(
-      (member) => member.userId !== employeeDetails.name
-    )?.userId;
+  const addMembersToGroup = () => {
+    if (!currentChannel || selectedEmployeeIds.length === 0) return;
 
+    setChatActionLoading(true);
+    currentChannel.inviteWithUserIds(selectedEmployeeIds, (updatedChannel, inviteError) => {
+      setChatActionLoading(false);
+      if (inviteError) {
+        console.error('Adding members to chat failed.');
+        Alert.alert('Error', 'Could not add the selected colleagues. Please try again.');
+        return;
+      }
+
+      setCurrentChannel(updatedChannel);
+      setChannels(current =>
+        current.map(channel => channel.url === updatedChannel.url ? updatedChannel : channel),
+      );
+      closeNewChatModal();
+      Alert.alert('Members added', 'The selected colleagues have been added to the group.');
+    });
+  };
+
+  const getChannelName = (channel) => {
+    if (!channel.isDistinct && channel.name) {
+      return channel.name;
+    }
+    return channel.members
+      .filter(member => member.userId !== employeeDetails.name)
+      .map(member => member.nickname || member.userId)
+      .join(', ') || 'Chat';
+  };
+
+  const renderChannelItem = ({ item }) => {
     return (
       <TouchableOpacity style={styles.channelItem} onPress={() => handleChannelPress(item)}>
         <View style={styles.channelInfo}>
-          <Text style={styles.channelName}>{otherUserId || 'Unknown'}</Text>
+          <Text style={styles.channelName}>{getChannelName(item)}</Text>
           <Text style={styles.lastMessage} numberOfLines={1}>
             {item.lastMessage ? item.lastMessage.message : 'No messages'}
           </Text>
@@ -293,7 +365,7 @@ const ChatComponent = () => {
         .fetch('GET', fileUrl);
       Alert.alert('Success', `File downloaded to ${path}`);
     } catch (error) {
-      console.error('Download error:', error);
+      console.error("Download error:");
       Alert.alert('Error', 'Failed to download file. Please try again.');
     }
   };
@@ -352,14 +424,14 @@ const ChatComponent = () => {
     <TouchableOpacity
       style={[
         styles.employeeItem,
-        selectedEmployee?.userId === item.userId && styles.selectedEmployeeItem,
+        selectedEmployeeIds.includes(item.userId) && styles.selectedEmployeeItem,
       ]}
-      onPress={() => setSelectedEmployee(item)}
+      onPress={() => toggleEmployeeSelection(item.userId)}
     >
       <View style={styles.employeeAvatarContainer}>
-        <Text style={styles.employeeAvatarText}>{item.userId[0].toUpperCase()}</Text>
+        <Text style={styles.employeeAvatarText}>{item.nickname[0].toUpperCase()}</Text>
       </View>
-      <Text style={styles.employeeName}>{item.userId}</Text>
+      <Text style={styles.employeeName}>{item.nickname}</Text>
     </TouchableOpacity>
   );
 
@@ -389,7 +461,12 @@ const ChatComponent = () => {
               <Text style={styles.title}>Chats</Text>
               <TouchableOpacity
                 style={styles.newChatButton}
-                onPress={() => setShowNewChatModal(true)}
+                onPress={() => {
+                  setChatMode('direct');
+                  setSelectedEmployeeIds([]);
+                  setShowNewChatModal(true);
+                }}
+                accessibilityLabel="Start a new chat"
               >
                 <NewChatIcon width={24} height={24} color="#FFFFFF" />
               </TouchableOpacity>
@@ -409,13 +486,22 @@ const ChatComponent = () => {
               </TouchableOpacity>
               <View style={styles.headerTitleContainer}>
                 <Text style={styles.headerTitle}>
-                  {
-                    currentChannel.members.find(
-                      (member) => member.userId !== employeeDetails.name
-                    )?.userId
-                  }
+                  {getChannelName(currentChannel)}
                 </Text>
               </View>
+              {!currentChannel.isDistinct && (
+                <TouchableOpacity
+                  style={styles.addMembersButton}
+                  onPress={() => {
+                    setChatMode('addMembers');
+                    setSelectedEmployeeIds([]);
+                    setShowNewChatModal(true);
+                  }}
+                  accessibilityLabel="Add members to group"
+                >
+                  <Text style={styles.addMembersButtonText}>+</Text>
+                </TouchableOpacity>
+              )}
             </View>
             <FlatList
               ref={flatListRef}
@@ -444,30 +530,91 @@ const ChatComponent = () => {
           </>
         )}
 
-        <Modal visible={showNewChatModal} animationType="slide" transparent={true}>
+        <Modal
+          visible={showNewChatModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={closeNewChatModal}
+        >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <TouchableOpacity onPress={() => setShowNewChatModal(false)}>
+                <TouchableOpacity onPress={closeNewChatModal} accessibilityLabel="Close">
                   <CloseIcon width={30} height={30} color="#000" />
                 </TouchableOpacity>
-                <Text style={styles.modalTitle}>New Chat</Text>
+                <Text style={styles.modalTitle}>
+                  {chatMode === 'addMembers' ? 'Add members' : 'New chat'}
+                </Text>
               </View>
+              {chatMode !== 'addMembers' && (
+                <View style={styles.modeSelector}>
+                  <TouchableOpacity
+                    style={[styles.modeButton, chatMode === 'direct' && styles.activeModeButton]}
+                    onPress={() => {
+                      setChatMode('direct');
+                      setSelectedEmployeeIds([]);
+                    }}
+                  >
+                    <Text style={[styles.modeButtonText, chatMode === 'direct' && styles.activeModeButtonText]}>
+                      Direct
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modeButton, chatMode === 'group' && styles.activeModeButton]}
+                    onPress={() => {
+                      setChatMode('group');
+                      setSelectedEmployeeIds([]);
+                    }}
+                  >
+                    <Text style={[styles.modeButtonText, chatMode === 'group' && styles.activeModeButtonText]}>
+                      Group
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {chatMode === 'group' && (
+                <TextInput
+                  style={styles.groupNameInput}
+                  value={groupName}
+                  onChangeText={setGroupName}
+                  placeholder="Group name"
+                  placeholderTextColor="#999"
+                  maxLength={80}
+                  accessibilityLabel="Group name"
+                />
+              )}
               <FlatList
-                data={employeesWithAccess}
+                data={chatMode === 'addMembers'
+                  ? employeesWithAccess.filter(employee =>
+                    !currentChannel?.members.some(member => member.userId === employee.userId),
+                  )
+                  : employeesWithAccess}
                 renderItem={renderEmployeeItem}
                 keyExtractor={(item) => item.userId}
                 contentContainerStyle={styles.employeeList}
+                ListEmptyComponent={
+                  <Text style={styles.emptyEmployeeText}>No colleagues available to add.</Text>
+                }
               />
               <TouchableOpacity
                 style={[
                   styles.startChatButton,
-                  !selectedEmployee && styles.disabledButton,
+                  (selectedEmployeeIds.length === 0 || chatActionLoading) && styles.disabledButton,
                 ]}
-                onPress={createNewChat}
-                disabled={!selectedEmployee}
+                onPress={chatMode === 'addMembers' ? addMembersToGroup : createNewChat}
+                disabled={selectedEmployeeIds.length === 0 || chatActionLoading}
               >
-                <Text style={styles.startChatButtonText}>Start Chat</Text>
+                {chatActionLoading
+                  ? <ActivityIndicator color="#FFFFFF" />
+                  : (
+                    <Text style={styles.startChatButtonText}>
+                      {chatMode === 'addMembers'
+                        ? 'Add selected'
+                        : chatMode === 'group'
+                          ? 'Create group'
+                          : 'Start chat'}
+                    </Text>
+                  )}
               </TouchableOpacity>
             </View>
           </View>
@@ -519,6 +666,20 @@ const styles = StyleSheet.create({
   },
   newChatButton: {
     padding: 10,
+  },
+  addMembersButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+  },
+  addMembersButtonText: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '500',
   },
   channelList: {
     paddingHorizontal: 20,
@@ -703,8 +864,48 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     flex: 1,
   },
+  modeSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F2F5',
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 12,
+  },
+  modeButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  activeModeButton: {
+    backgroundColor: '#153156',
+  },
+  modeButtonText: {
+    color: '#153156',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  activeModeButtonText: {
+    color: '#FFFFFF',
+  },
+  groupNameInput: {
+    backgroundColor: '#F5F7FA',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D6DCE5',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    marginBottom: 10,
+    color: '#153156',
+  },
   employeeList: {
     paddingBottom: 20,
+  },
+  emptyEmployeeText: {
+    color: '#666',
+    fontSize: 15,
+    textAlign: 'center',
+    paddingVertical: 24,
   },
   employeeItem: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { Modal, View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
 import { getUserRFQs, getSalesPersonNameByEmployeeID, downloadQuotationPDF } from '../../api';
 import { EmployeeContext } from '../context/EmployeeContext';
@@ -11,35 +11,39 @@ const RFQModal = ({ visible, onClose }) => {
     if (visible && employeeDetails) {
       fetchSalesPersonAndRFQs();
     }
-  }, [visible]);
+  }, [visible, employeeDetails, fetchSalesPersonAndRFQs]);
 
-  const fetchSalesPersonAndRFQs = async () => {
+  const fetchSalesPersonAndRFQs = useCallback(async () => {
+    if (!employeeDetails?.name) {
+      setRFQs([]);
+      return;
+    }
+
     try {
       const salesPersonName = await getSalesPersonNameByEmployeeID(employeeDetails.name);
 
       if (salesPersonName) {
         const rfqData = await getUserRFQs(salesPersonName);
-        console.log('Fetched RFQs:', rfqData);  // Add logging
         setRFQs(rfqData || []);  // Ensure it's always an array
       } else {
-        console.warn('No RFQs found for this sales person');
+        console.warn("No RFQs found for this sales person");
         setRFQs([]);  // If no RFQs, set an empty array
       }
     } catch (error) {
-      console.error('Error fetching Sales Person or RFQs:', error);
+      console.error("Error fetching Sales Person or RFQs:");
       setRFQs([]);  // Handle errors by setting an empty array
     }
-  };
+  }, [employeeDetails?.name]);
 
   const downloadQuotation = async (quotationNo) => {
     try {
       const result = await downloadQuotationPDF(quotationNo);
       if (result.success) {
-        console.log('Success', `PDF downloaded and saved to ${result.path}`);
+
       }
     } catch (error) {
-      console.error('Error downloading PDF:', error);
-      console.log('Error', 'Failed to download PDF. Please try again.');
+      console.error("Error downloading PDF:");
+
     }
   };
 

@@ -57,7 +57,7 @@ const RequestForQuotation = () => {
       const suppliers = await getSuppliers();
       setSupplierList(suppliers);
     } catch (error) {
-      console.error('Error fetching suppliers:', error);
+      console.error("Error fetching suppliers:");
     }
   };
 
@@ -66,7 +66,7 @@ const RequestForQuotation = () => {
       const items = await getItemsList();
       setItemList(items);
     } catch (error) {
-      console.error('Error fetching items:', error);
+      console.error("Error fetching items:");
     }
   };
 
@@ -75,7 +75,7 @@ const RequestForQuotation = () => {
       const uoms = await getUOMs();
       setUomOptions(uoms);
     } catch (error) {
-      console.error('Error fetching UOMs:', error);
+      console.error("Error fetching UOMs:");
     }
   };
 
@@ -84,7 +84,7 @@ const RequestForQuotation = () => {
       const warehouses = await getWarehouses();
       setWarehouseOptions(warehouses);
     } catch (error) {
-      console.error('Error fetching warehouses:', error);
+      console.error("Error fetching warehouses:");
     }
   };
 
@@ -118,8 +118,6 @@ const RequestForQuotation = () => {
   };
 
   const handleRequestQuotation = async () => {
-    console.log('Items before submission:', items);
-
     if (suppliers.some(s => !s.supplier || !s.email)) {
       Alert.alert('Error', 'Please fill in all supplier fields');
       return;
@@ -160,13 +158,13 @@ const RequestForQuotation = () => {
         message_for_supplier: 'N/A',
       };
 
-      console.log('Request Data:', newQuotationRequest);
+
 
       await requestQuotation(newQuotationRequest);
       Alert.alert('Success', 'Quotation request submitted');
       resetForm();
     } catch (error) {
-      console.error('Error requesting quotation:', error);
+      console.error("Error requesting quotation:");
       Alert.alert('Error', 'Failed to submit quotation request');
     }
   };

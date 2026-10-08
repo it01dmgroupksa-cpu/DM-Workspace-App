@@ -1,4 +1,4 @@
-import React, {useState, useContext, useEffect} from 'react';
+import React, { useState, useContext, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -61,14 +61,14 @@ const MaterialsServiceRequestForm = () => {
     fetchRequestTypes();
     fetchDraftRequests();
     fetchSubmittedRequests();
-  }, []);
+  }, [fetchDraftRequests, fetchSubmittedRequests]);
 
   const fetchUnits = async () => {
     try {
       const units = await getUnitOptions();
       setUnitOptions(units || []);
     } catch (error) {
-      console.error('Error fetching units:', error);
+      console.error("Error fetching units:");
       Alert.alert('Error', 'Failed to fetch unit options.');
     }
   };
@@ -78,36 +78,41 @@ const MaterialsServiceRequestForm = () => {
       const types = await getRequestTypes();
       setRequestTypes(types || []);
     } catch (error) {
-      console.error('Error fetching request types:', error);
+      console.error("Error fetching request types:");
       Alert.alert('Error', 'Failed to fetch request types.');
     }
   };
 
-  const fetchDraftRequests = async () => {
+  const fetchDraftRequests = useCallback(async () => {
+    if (!employeeDetails?.name) {
+      setDraftRequests([]);
+      return;
+    }
+
     try {
       const drafts = await getDraftRequests(employeeDetails.name);
       setDraftRequests(drafts || []);
     } catch (error) {
-      console.error('Error fetching draft requests:', error);
+      console.error("Error fetching draft requests:");
       Alert.alert('Error', 'Failed to fetch draft requests.');
     }
-  };
+  }, [employeeDetails]);
 
-  const fetchSubmittedRequests = async () => {
+  const fetchSubmittedRequests = useCallback(async () => {
     try {
       if (employeeDetails && employeeDetails.name) {
         const submitted = await getSubmittedRequests(employeeDetails.name);
         setSubmittedRequests(submitted);
       } else {
-        console.error('Employee details not available');
+        console.error("Employee details not available");
         setSubmittedRequests([]);
       }
     } catch (error) {
-      console.error('Error fetching submitted requests:', error);
+      console.error("Error fetching submitted requests:");
       Alert.alert('Error', 'Failed to fetch submitted requests.');
       setSubmittedRequests([]);
     }
-  };
+  }, [employeeDetails]);
 
   const handleInputChange = (field, value) => {
     setNewRequest({...newRequest, [field]: value});
@@ -214,8 +219,8 @@ const MaterialsServiceRequestForm = () => {
     }
 
     try {
-      const response = await createMaterialsRequest(requests[0]);
-      console.log('Request created:', response);
+      await createMaterialsRequest(requests[0]);
+
       Alert.alert('Success', 'Request submitted successfully');
       setRequests([]);
       fetchDraftRequests();
@@ -233,7 +238,7 @@ const MaterialsServiceRequestForm = () => {
           );
           errorMessage = serverMessages[0].message || errorMessage;
         } catch (parseError) {
-          console.error('Error parsing server messages:', parseError);
+          console.error("Error parsing server messages:");
         }
       }
       Alert.alert('Error', errorMessage);
@@ -247,7 +252,7 @@ const MaterialsServiceRequestForm = () => {
       fetchDraftRequests();
       fetchSubmittedRequests();
     } catch (error) {
-      console.error('Error submitting draft request:', error);
+      console.error("Error submitting draft request:");
       Alert.alert(
         'Error',
         error.message || 'Failed to submit draft request. Please try again.',

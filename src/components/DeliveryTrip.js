@@ -63,7 +63,7 @@ const DeliveryTrip = () => {
 
       setCameraVisible(true);
     } catch (error) {
-      console.error('Failed to request camera permission:', error);
+      console.error("Failed to request camera permission:");
       Alert.alert('Error', 'Unable to request camera permission.');
     }
   };
@@ -83,7 +83,7 @@ const DeliveryTrip = () => {
       );
       setDeliveryTrips(tripsWithStops);
     } catch (error) {
-      console.error('Failed to fetch delivery trips:', error);
+      console.error("Failed to fetch delivery trips:");
       Alert.alert('Error', 'Failed to fetch delivery trips');
     }
   }, [employeeDetails?.name]);
@@ -104,7 +104,7 @@ const DeliveryTrip = () => {
 
   const captureImage = useCallback(async () => {
     if (!cameraRef.current) {
-      console.error('Camera reference is not available');
+      console.error("Camera reference is not available");
       Alert.alert('Error', 'Camera is not ready yet.');
       return null;
     }
@@ -131,7 +131,7 @@ const DeliveryTrip = () => {
         setCameraVisible(false);
       }
     } catch (error) {
-      console.error('Failed to capture delivery note image:', error);
+      console.error("Failed to capture delivery note image:");
       Alert.alert('Error', 'Unable to capture the delivery note photo.');
     }
   };
@@ -154,12 +154,7 @@ const DeliveryTrip = () => {
 
       setIsUploading(true);
 
-      await updateDeliveryTripStatus(selectedTrip.name, status);
-
       if (status === 'Delivered') {
-        const currentTime = moment().format('YYYY-MM-DD HH:mm:ss');
-        await updateCustomDeliveredTime(selectedTrip.name, currentTime);
-
         const uploadedImageUrls = await Promise.all(
           capturedImages.map(image =>
             uploadImageToImgur(image.base64, image.fileName),
@@ -167,8 +162,11 @@ const DeliveryTrip = () => {
         );
 
         await updateSignedDeliveryNotes(selectedTrip.name, uploadedImageUrls);
+        const currentTime = moment().format('YYYY-MM-DD HH:mm:ss');
+        await updateCustomDeliveredTime(selectedTrip.name, currentTime);
       }
 
+      await updateDeliveryTripStatus(selectedTrip.name, status);
       Alert.alert('Success', `Trip marked as ${status}`);
       setModalVisible(false);
       setCapturedImages([]);

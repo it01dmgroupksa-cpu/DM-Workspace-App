@@ -1,8 +1,7 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator, StackNavigationProp } from '@react-navigation/stack';
-import { TouchableOpacity, Text, View, Modal, StyleSheet, Image } from 'react-native';
+import { createStackNavigator } from '@react-navigation/stack';
 import {
   AttendanceIcon,
   SalesRFQIcon,
@@ -18,9 +17,8 @@ import {
   UserIcon,
   ChatIcon,
   TripIcon,
-  LogOutIcon,
   WebviewIcon
-} from './src/components/icons'; // Ensure LogOutIcon is imported here
+} from './src/components/icons';
 import AttendanceManagement from './src/components/AttendanceManagement';
 import LeaveManagement from './src/components/LeaveManagement';
 import RFQ from './src/components/RequestForQuotation';
@@ -43,15 +41,6 @@ import SplashScreen from './src/components/SplashScreen'; // Import SplashScreen
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-type RootStackParamList = {
-  Home: undefined;
-  Login: undefined;
-  TaskManagement: undefined;
-  Splash: undefined; // Adding Splash route
-};
-
-type RootStackNavigationProp = StackNavigationProp<RootStackParamList>;
-
 interface Flags {
   showSales: boolean;
   showPurchaseRFQ: boolean;
@@ -60,8 +49,6 @@ interface Flags {
 }
 
 const SalesNavigator: React.FC = () => {
-  const [activeSalesTab, setActiveSalesTab] = useState<'Sales RFQ' | 'Items Stock' | 'Sales Outstanding'>('Sales RFQ');
-
   return (
     <Tab.Navigator
       screenOptions={{
@@ -76,9 +63,6 @@ const SalesNavigator: React.FC = () => {
         options={{
           tabBarIcon: SalesRFQIcon,
         }}
-        listeners={{
-          tabPress: () => setActiveSalesTab('Sales RFQ'),
-        }}
       />
       <Tab.Screen
         name="Items Stock"
@@ -86,18 +70,12 @@ const SalesNavigator: React.FC = () => {
         options={{
           tabBarIcon: ItemStockIcon,
         }}
-        listeners={{
-          tabPress: () => setActiveSalesTab('Items Stock'),
-        }}
       />
       <Tab.Screen
         name="Sales Outstanding"
         component={SalesOutstanding}
         options={{
           tabBarIcon: OutstandingSalesIcon,
-        }}
-        listeners={{
-          tabPress: () => setActiveSalesTab('Sales Outstanding'),
         }}
       />
     </Tab.Navigator>

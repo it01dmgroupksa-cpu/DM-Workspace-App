@@ -1,7 +1,6 @@
 // input.tsx
 import * as React from "react";
 import { cn } from "../../lib/utils";
-import { User } from "lucide-react";
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   startIcon?: React.ReactNode;
@@ -41,7 +40,8 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       "rounded-md",
       "placeholder-text-muted",
       hasStartIcon ? "pl-10" : "", // Add left padding when there is a start icon
-      hasEndIcon ? "pr-10" : "" // Add right padding when there is an end icon
+      hasEndIcon ? "pr-10" : "", // Add right padding when there is an end icon
+      className
     );
 
     return (
