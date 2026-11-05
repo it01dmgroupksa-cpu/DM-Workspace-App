@@ -52,7 +52,7 @@ const SalesNavigator: React.FC = () => {
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: '#153156',
+        tabBarActiveTintColor: '#103BA9',
         tabBarInactiveTintColor: '#ccc',
         headerShown: false,
       }}
@@ -86,7 +86,7 @@ const MoreNavigator: React.FC = () => {
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: '#153156',
+        tabBarActiveTintColor: '#103BA9',
         tabBarInactiveTintColor: '#ccc',
         headerShown: false,
       }}
@@ -157,7 +157,7 @@ const DynamicTabNavigator: React.FC = () => {
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: '#153156',
+        tabBarActiveTintColor: '#103BA9',
         tabBarInactiveTintColor: '#ccc',
         headerShown: false,
       }}

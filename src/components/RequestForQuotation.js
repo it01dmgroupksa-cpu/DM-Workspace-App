@@ -417,34 +417,34 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 30,
     textAlign: 'center',
   },
   label: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 10,
   },
   input: {
     width: '100%',
     height: 50,
-    borderColor: '#153156',
+    borderColor: '#103BA9',
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 16,
     marginBottom: 20,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
   },
   dateText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   addButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 16,
     borderRadius: 12,
     width: '100%',
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   submitButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 16,
     borderRadius: 12,
     width: '100%',
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
   },
   dropdown: {
     height: 50,
-    borderColor: '#153156',
+    borderColor: '#103BA9',
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 16,
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   },
   selectedTextStyle: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   inputSearchStyle: {
     height: 40,

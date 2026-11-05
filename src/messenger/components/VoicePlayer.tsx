@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
 import {
@@ -8,6 +8,7 @@ import {
 } from 'expo-audio';
 import {BRAND} from '../config';
 import {clock} from '../format';
+import {Waveform, shapeFor} from './Waveform';
 
 // One voice note plays at a time, as in WhatsApp.
 let current: {id: string; player: AudioPlayer; stop: () => void} | null = null;
@@ -20,6 +21,7 @@ export function VoicePlayer({id, url}: {id: string; url: string}) {
   const [rate, setRate] = useState(1);
   const [width, setWidth] = useState(1);
   const player = useRef<AudioPlayer | null>(null);
+  const bars = useMemo(() => shapeFor(id, 32), [id]);
 
   useEffect(
     () => () => {
@@ -49,9 +51,20 @@ export function VoicePlayer({id, url}: {id: string; url: string}) {
   }
   async function toggle() {
     const p = ensure();
-    if (p.playing) return p.pause();
+    if (p.playing || playing) {
+      setPlaying(false); // react at once; the player confirms a moment later
+      return p.pause();
+    }
+    setPlaying(true);
     if (current && current.id !== id) current.stop();
-    current = {id, player: p, stop: () => p.pause()};
+    current = {
+      id,
+      player: p,
+      stop: () => {
+        p.pause();
+        setPlaying(false);
+      },
+    };
     await setAudioModeAsync({
       playsInSilentMode: true,
       allowsRecording: false,
@@ -73,23 +86,24 @@ export function VoicePlayer({id, url}: {id: string; url: string}) {
     <View style={styles.row}>
       <Pressable
         onPress={toggle}
-        style={styles.play}
+        style={({pressed}) => [styles.play, pressed && {opacity: 0.7}]}
+        hitSlop={8}
         accessibilityLabel={playing ? 'Pause' : 'Play voice message'}>
         <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#fff" />
       </Pressable>
       <Pressable
         style={styles.track}
+        hitSlop={{top: 10, bottom: 10}}
         onLayout={e => setWidth(e.nativeEvent.layout.width)}
         onPress={e => seek(e.nativeEvent.locationX)}>
-        <View style={styles.rail} />
-        <View style={[styles.fill, {width: `${progress * 100}%`}]} />
-        <View style={[styles.knob, {left: `${progress * 100}%`}]} />
+        <Waveform levels={bars} progress={progress} height={26} />
       </Pressable>
       <Text style={styles.time}>
         {clock(position > 0 ? position : duration)}
       </Text>
       <Pressable
         onPress={cycleRate}
+        hitSlop={8}
         style={styles.rate}
         accessibilityLabel="Playback speed">
         <Text style={styles.rateText}>{rate}×</Text>
@@ -101,34 +115,19 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: 250,
+    width: 260,
     gap: 8,
     paddingVertical: 2,
   },
   play: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: BRAND.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   track: {flex: 1, height: 28, justifyContent: 'center'},
-  rail: {height: 3, borderRadius: 2, backgroundColor: '#c8d1d6'},
-  fill: {
-    position: 'absolute',
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: BRAND.accent,
-  },
-  knob: {
-    position: 'absolute',
-    width: 12,
-    height: 12,
-    marginLeft: -6,
-    borderRadius: 6,
-    backgroundColor: BRAND.accent,
-  },
   time: {
     minWidth: 34,
     color: BRAND.muted,

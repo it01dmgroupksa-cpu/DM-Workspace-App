@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
   },
   itemText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 4,
   },
   quotationRow: {
@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   },
   quotationText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   downloadButton: {
     backgroundColor: '#4CAF50',
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingVertical: 12,
     paddingHorizontal: 24,
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },

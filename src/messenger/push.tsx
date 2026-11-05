@@ -46,8 +46,16 @@ async function setup() {
     await Notifications.setNotificationChannelAsync('calls', {
       name: 'Calls',
       importance: Notifications.AndroidImportance.MAX,
-      sound: 'default',
-      vibrationPattern: [0, 800, 400, 800, 400, 800],
+      // A 30 second ring (android/app/src/main/res/raw/ring.wav) played as a ringtone,
+      // so a call rings on a locked or closed phone instead of a single beep.
+      sound: 'ring.wav',
+      audioAttributes: {
+        usage: Notifications.AndroidAudioUsage.NOTIFICATION_RINGTONE,
+        contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+      },
+      vibrationPattern: [0, 800, 400, 800, 400, 800, 400, 800, 400, 800],
+      enableVibrate: true,
+      bypassDnd: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
   }

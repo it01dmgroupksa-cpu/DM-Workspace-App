@@ -11,7 +11,7 @@ const DMWebViewScreen = () => {
 
   const LoadingIndicatorView = () => (
     <View style={styles.loadingContainer}>
-      <ActivityIndicator color="#153156" size="large" />
+      <ActivityIndicator color="#103BA9" size="large" />
       <Text>Loading...</Text>
     </View>
   );
@@ -40,7 +40,7 @@ const DMWebViewScreen = () => {
       >
         <ArrowLeft 
           size={24} 
-          color={canGoBack ? "#153156" : "#ccc"}
+          color={canGoBack ? "#103BA9" : "#ccc"}
         />
       </TouchableOpacity>
 
@@ -50,7 +50,7 @@ const DMWebViewScreen = () => {
       >
         <RefreshCw 
           size={24} 
-          color="#153156"
+          color="#103BA9"
         />
       </TouchableOpacity>
 
@@ -61,7 +61,7 @@ const DMWebViewScreen = () => {
       >
         <ArrowRight 
           size={24} 
-          color={canGoForward ? "#153156" : "#ccc"}
+          color={canGoForward ? "#103BA9" : "#ccc"}
         />
       </TouchableOpacity>
     </View>

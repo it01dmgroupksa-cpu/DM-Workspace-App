@@ -109,14 +109,14 @@ const handleLogin = async () => {
 
 
   const handleContactSupport = () => {
-    const email = 'rihal@dmgroupksa.com';
+    const email = 'itadmin@dmgroupksa.com';
     const subject = 'Issue Signing Into DM Workspace App';
     const mailtoURL = `mailto:${email}?subject=${encodeURIComponent(subject)}`;
 
     Linking.openURL(mailtoURL).catch(err =>
       Alert.alert(
         'Error',
-        'Failed to open email client. Please manually send an email to rihal@dmgroupksa.com',
+        'Failed to open email client. Please manually send an email to itadmin@dmgroupksa.com',
       ),
     );
   };
@@ -129,7 +129,7 @@ const handleLogin = async () => {
         <Text style={styles.subText}>Please sign in to continue</Text>
 
         <View style={styles.inputContainer}>
-          <UserAppIcon width={24} height={24} stroke="#153156" />
+          <UserAppIcon width={24} height={24} stroke="#103BA9" />
           <TextInput
             style={styles.input}
             placeholder="Username"
@@ -144,9 +144,9 @@ const handleLogin = async () => {
 
         <View style={styles.inputContainer}>
           {showPassword ? (
-            <EyeIcon width={24} height={24} stroke="#153156" />
+            <EyeIcon width={24} height={24} stroke="#103BA9" />
           ) : (
-            <EyeOffIcon width={24} height={24} stroke="#153156" />
+            <EyeOffIcon width={24} height={24} stroke="#103BA9" />
           )}
           <TextInput
             style={styles.input}
@@ -179,11 +179,18 @@ const handleLogin = async () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.messengerButton}
+          style={[
+            styles.messengerButton,
+            chat.status === 'signedIn' && styles.messengerButtonOn,
+          ]}
           onPress={() => navigation.navigate('Messenger')}
           disabled={isLoading}>
-          <Text style={styles.messengerButtonText}>
-            {chat.status === 'signedIn' ? 'Open Messenger' : 'Sign in to Messenger only'}
+          <Text
+            style={[
+              styles.messengerButtonText,
+              chat.status === 'signedIn' && styles.messengerButtonTextOn,
+            ]}>
+            {chat.status === 'signedIn' ? '● Open Messenger' : 'Sign in to Messenger only'}
             {unread ? ` (${unread > 99 ? '99+' : unread})` : ''}
           </Text>
         </TouchableOpacity>
@@ -222,7 +229,7 @@ const styles = StyleSheet.create({
   welcomeText: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 10,
   },
   subText: {
@@ -247,11 +254,11 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   showHideText: {
-    color: '#153156',
+    color: '#103BA9',
     fontSize: 14,
   },
   loginButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 15,
     borderRadius: 10,
     width: '100%',
@@ -267,7 +274,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   contactSupportText: {
-    color: '#153156',
+    color: '#103BA9',
     marginTop: 20,
     fontSize: 16,
     textDecorationLine: 'underline',
@@ -278,10 +285,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#153156',
+    borderColor: '#103BA9',
+  },
+  messengerButtonOn: {
+    backgroundColor: '#16a34a',
+    borderColor: '#16a34a',
+  },
+  messengerButtonTextOn: {
+    color: '#FFFFFF',
   },
   messengerButtonText: {
-    color: '#153156',
+    color: '#103BA9',
     fontSize: 15,
     fontWeight: '600',
   },

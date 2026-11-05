@@ -231,8 +231,24 @@ export function ChatScreen({
   const myState = live?.members.find(x => x.user === me)?.state;
 
   function call(video: boolean) {
-    if (live && !inThisCall) return calls.join(live, video);
-    calls.start(id, video);
+    const joining = !!live && !inThisCall;
+    const name = title;
+    Alert.alert(
+      video ? 'Video call' : 'Voice call',
+      joining
+        ? `Join the ${video ? 'video' : 'voice'} call in ${name}?`
+        : `${video ? 'Start a video call' : 'Call'} ${
+            c?.kind === 'group' ? 'the group ' : ''
+          }${name}?`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: joining ? 'Join' : video ? 'Video call' : 'Call',
+          onPress: () =>
+            joining ? calls.join(live!, video) : calls.start(id, video),
+        },
+      ],
+    );
   }
   async function send(
     text: string,

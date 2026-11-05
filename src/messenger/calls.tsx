@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import {
   Alert,
@@ -36,7 +37,7 @@ import {
   useRoomContext,
   useTracks,
 } from '@livekit/react-native';
-import {Track} from 'livekit-client';
+import {Track, type LocalVideoTrack} from 'livekit-client';
 import {relay} from './api';
 import {BRAND, RING_SECONDS} from './config';
 import {clock, convTitle, personOf} from './format';
@@ -95,6 +96,25 @@ function ring(on: boolean) {
   } catch {
     ringer = null; // vibration still rings
   }
+}
+
+// Which camera is in use. restartTrack re-opens the capture on the other camera, which
+// works on every phone (the old private _switchCamera did nothing through LiveKit).
+type Facing = 'user' | 'environment';
+let facing: Facing = 'user';
+const facingListeners = new Set<() => void>();
+function setFacing(next: Facing) {
+  facing = next;
+  facingListeners.forEach(l => l());
+}
+function useFacing() {
+  return useSyncExternalStore(
+    l => {
+      facingListeners.add(l);
+      return () => void facingListeners.delete(l);
+    },
+    () => facing,
+  );
 }
 
 async function permissions(video: boolean) {
@@ -422,7 +442,7 @@ function CallView(p: ViewProps) {
         token={s.token}
         connect
         audio
-        video={s.video}
+        video={s.video ? {facingMode: 'user'} : false}
         options={{adaptiveStream: {pixelDensity: 'screen'}}}
         onConnected={p.onConnected}
         onError={() => p.onError('The call connection failed.')}>
@@ -584,6 +604,7 @@ function Stage({
 
 // Everyone else's camera fills the screen (split for groups); mine sits in the corner.
 function Videos() {
+  const side = useFacing();
   const tracks = useTracks([Track.Source.Camera], {
     onlySubscribed: false,
   }).filter(isTrackReference);
@@ -608,7 +629,7 @@ function Videos() {
           trackRef={local}
           style={styles.self}
           objectFit="cover"
-          mirror
+          mirror={side === 'user'}
           zOrder={1}
         />
       ) : null}
@@ -620,6 +641,25 @@ function Controls({video, onHangUp}: {video: boolean; onHangUp: () => void}) {
   const {localParticipant, isMicrophoneEnabled, isCameraEnabled, cameraTrack} =
     useLocalParticipant();
   const [speaker, setSpeaker] = useState(video);
+  const [flipping, setFlipping] = useState(false);
+  const side = useFacing();
+  useEffect(() => {
+    setFacing('user');
+  }, []); // each call starts on the front camera
+  async function flip() {
+    const track = cameraTrack?.track as LocalVideoTrack | undefined;
+    if (!track || flipping) return;
+    const next: Facing = side === 'user' ? 'environment' : 'user';
+    setFlipping(true);
+    try {
+      await track.restartTrack({facingMode: next});
+      setFacing(next);
+    } catch {
+      Alert.alert('Camera', "Couldn't switch the camera.");
+    } finally {
+      setFlipping(false);
+    }
+  }
   async function toggleSpeaker() {
     const next = !speaker;
     setSpeaker(next);
@@ -669,9 +709,7 @@ function Controls({video, onHangUp}: {video: boolean; onHangUp: () => void}) {
             ),
       )}
       {isCameraEnabled
-        ? button('camera-reverse', 'Switch camera', false, () =>
-            (cameraTrack?.track?.mediaStreamTrack as any)?._switchCamera?.(),
-          )
+        ? button('camera-reverse', 'Switch camera', flipping, flip)
         : null}
       {button('volume-high', 'Speaker', speaker, toggleSpeaker)}
       <Pressable

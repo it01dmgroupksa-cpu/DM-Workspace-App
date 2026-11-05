@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
   },
   profileDesignation: {
     fontSize: 16,
@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 10,
   },
   row: {
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 10,
   },
   modalText: {

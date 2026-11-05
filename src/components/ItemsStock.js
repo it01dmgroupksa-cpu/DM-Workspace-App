@@ -104,7 +104,7 @@ const ItemsStock = () => {
           <TextInput
             style={styles.input}
             placeholder="Search items..."
-            placeholderTextColor="#153156"
+            placeholderTextColor="#103BA9"
             value={searchQuery}
             onChangeText={setSearchQuery}
             returnKeyType="search"
@@ -166,7 +166,7 @@ const ItemsStock = () => {
                   {selectedItem.item_code} - {selectedItem.item_name}
                 </Text>
                 {isLoading ? (
-                  <ActivityIndicator size="large" color="#153156" />
+                  <ActivityIndicator size="large" color="#103BA9" />
                 ) : (
                   <View>
                     {warehouseStock.map((stock) => (
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 30,
     textAlign: 'center',
   },
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 20,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   searchButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 16,
     borderRadius: 12,
     width: '100%',
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     textAlign: 'center',
   },
   tableRow: {
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
   tableRowText: {
     flex: 1,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     textAlign: 'center',
   },
   paginationContainer: {
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   paginationButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 12,
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
   },
   paginationText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     fontWeight: '600',
   },
   disabledButton: {
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 16,
     textAlign: 'center',
   },
@@ -336,15 +336,15 @@ const styles = StyleSheet.create({
   },
   warehouseName: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   warehouseStock: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     fontWeight: 'bold',
   },
   modalCloseButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',

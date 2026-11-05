@@ -204,7 +204,7 @@ const DMOfficialMemo = () => {
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#153156" />
+        <ActivityIndicator size="large" color="#103BA9" />
       </View>
     );
   }
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 30,
     textAlign: 'center',
   },
@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     textAlign: 'center',
   },
   tableRow: {
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
   tableRowText: {
     flex: 1,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     textAlign: 'center',
   },
   memoFromColumn: {
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 24,
     textAlign: 'center',
   },
@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
   },
   infoValue: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     fontWeight: '600',
     textAlign: 'right',
     flex: 2,
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 16,
   },
   memoContentContainer: {
@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   closeButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 14,
     borderRadius: 12,
     marginTop: 24,
@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
     marginBottom: 50,
   },
   paginationButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 12,
@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
   },
   paginationText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     fontWeight: '600',
   },
   disabledButton: {
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     top: 10,
     right: 10,
     zIndex: 10,
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     borderRadius: 25, // Makes it circular
     width: 45,
     height: 25,

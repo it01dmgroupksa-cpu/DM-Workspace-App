@@ -174,7 +174,7 @@ const LeaveManagement = () => {
             multiline
           />
           <TouchableOpacity style={styles.attachButton} onPress={handleDocumentPicker}>
-            <Ionicons name="attach" size={24} color="#153156" />
+            <Ionicons name="attach" size={24} color="#103BA9" />
             <Text style={styles.attachButtonText}>
               {document ? document.name : 'Attach Document'}
             </Text>
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   },
   datePickerText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   input: {
     borderWidth: 1,
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 20,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     textAlignVertical: 'top',
     minHeight: 100,
   },
@@ -290,18 +290,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#153156',
+    borderColor: '#103BA9',
     borderRadius: 10,
     padding: 15,
     marginBottom: 20,
   },
   attachButtonText: {
     marginLeft: 10,
-    color: '#153156',
+    color: '#103BA9',
     fontSize: 16,
   },
   submitButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 15,
     borderRadius: 10,
     alignItems: 'center',
@@ -318,10 +318,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#153156',
+    borderColor: '#103BA9',
   },
   viewRequestsButtonText: {
-    color: '#153156',
+    color: '#103BA9',
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   requestType: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
   },
   requestDays: {
     fontSize: 14,
@@ -363,7 +363,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   closeModalButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 15,
     borderRadius: 10,
     alignItems: 'center',

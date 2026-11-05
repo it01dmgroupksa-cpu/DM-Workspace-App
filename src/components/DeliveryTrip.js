@@ -622,7 +622,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -652,7 +652,7 @@ const styles = StyleSheet.create({
   tripId: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
   },
   tripInfo: {
     flexDirection: 'row',
@@ -676,14 +676,14 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 20,
     textAlign: 'center',
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginTop: 20,
     marginBottom: 10,
   },
@@ -699,7 +699,7 @@ const styles = StyleSheet.create({
   },
   detailValue: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   stopItem: {
     backgroundColor: '#F5F7FA',
@@ -710,7 +710,7 @@ const styles = StyleSheet.create({
   stopTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 8,
   },
   buttonContainer: {
@@ -738,7 +738,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   closeButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 12,

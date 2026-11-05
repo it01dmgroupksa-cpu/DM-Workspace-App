@@ -160,6 +160,14 @@ Pushes go from the panel through Expo's push service to Firebase (Android) and A
 4. Optional: if "Enhanced push security" is turned on for the Expo project, set
    `EXPO_ACCESS_TOKEN` in the panel's `.env`.
 
+**Ringing on a closed or locked phone (Android).** The `calls` channel plays a 30 second
+ringtone (`android/app/src/main/res/raw/ring.wav`) at ringtone volume with strong
+vibration. For it to apply, the panel's push for a call must carry
+`"channelId": "calls"` and `"priority": "high"`. With no `EXPO_PROJECT_ID` and no
+`google-services.json` no push is delivered at all, so nothing can ring while the app
+is closed. Channels cannot be changed once created: after updating from a build that
+ran with the old `calls` channel, uninstall and reinstall (or clear app data) once.
+
 ### 5. Panel and ERP (done by IT, once, before the app ships)
 
 - Deploy the panel release (migrations 035 and 036: phone push, resumable uploads,

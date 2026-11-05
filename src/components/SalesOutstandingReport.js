@@ -238,7 +238,7 @@ const SalesOutstandingReport = () => {
       </View>
 
       {isLoading ? (
-        <ActivityIndicator size="large" color="#153156" />
+        <ActivityIndicator size="large" color="#103BA9" />
       ) : (
         <View style={styles.tableContainer}>
           <View style={styles.tableHeader}>
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 30,
     textAlign: 'center',
   },
@@ -311,10 +311,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 20,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   searchButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -328,13 +328,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     textAlign: 'center',
   },
   tableRowText: {
     flex: 1,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     textAlign: 'center',
   },
   customerColumn: {
@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 24,
     textAlign: 'center',
   },
@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
   },
   infoValue: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     fontWeight: '600',
     textAlign: 'right',
     flex: 2,
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 16,
   },
   tableContainer: {
@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     textAlign: 'center',
   },
   tableRow: {
@@ -437,7 +437,7 @@ const styles = StyleSheet.create({
   tableCell: {
     flex: 1,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     textAlign: 'center',
   },
   noItemsText: {
@@ -447,7 +447,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   closeButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 14,
     borderRadius: 12,
     marginTop: 24,
@@ -466,7 +466,7 @@ const styles = StyleSheet.create({
     marginBottom: 50,
   },
   paginationButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 12,
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
   },
   paginationText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     fontWeight: '600',
   },
   disabledButton: {
@@ -495,7 +495,7 @@ const styles = StyleSheet.create({
   totalText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
   },
 });
 
