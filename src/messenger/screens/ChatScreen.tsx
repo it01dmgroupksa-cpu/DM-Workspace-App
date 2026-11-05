@@ -33,8 +33,15 @@ import {
 import {MediaViewer} from '../components/MediaViewer';
 import {Picker, type Target} from '../components/Picker';
 import {Sheet, type SheetItem} from '../components/Sheet';
+import {ConnectionBar} from '../components/ConnectionBar';
 
-type Row = {key: string; day?: string; m?: Message; first?: boolean};
+type Row = {
+  key: string;
+  day?: string;
+  m?: Message;
+  first?: boolean;
+  unread?: number;
+};
 const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 export function ChatScreen({
@@ -64,6 +71,10 @@ export function ChatScreen({
   >(null);
   const [atBottom, setAtBottom] = useState(true);
   const pendingJump = useRef<string | null>(null);
+  // "N unread messages" stays above the first message that was unread on opening,
+  // until the chat is closed.
+  const openUnread = useRef(c?.unread || 0);
+  const unreadFrom = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     messenger.setActive(id);
@@ -92,6 +103,13 @@ export function ChatScreen({
     const out: Row[] = [];
     let day = '';
     let prev: Message | undefined;
+    if (unreadFrom.current === undefined && th.loaded && openUnread.current) {
+      const theirs = th.list.filter(
+        x => x.sender !== me && x.kind !== 'system' && !x.deleted,
+      );
+      unreadFrom.current =
+        theirs[Math.max(0, theirs.length - openUnread.current)]?.id || null;
+    }
     for (const m of th.list) {
       const d = new Date(m.createdAt).toDateString();
       if (d !== day) {
@@ -104,6 +122,10 @@ export function ChatScreen({
         prev.sender !== m.sender ||
         prev.kind === 'system' ||
         +new Date(m.createdAt) - +new Date(prev.createdAt) > 5 * 60_000;
+      if (m.id === unreadFrom.current) {
+        out.push({key: 'unread', unread: openUnread.current});
+        prev = undefined;
+      }
       out.push({
         key: m.clientId && m.sender === me ? 'c' + m.clientId : m.id,
         m,
@@ -231,6 +253,28 @@ export function ChatScreen({
   function menuItems(m: Message): SheetItem[] {
     const mine = m.sender === me;
     const items: SheetItem[] = [];
+    // Not on the server yet: it can be retried, copied or cancelled, nothing else.
+    if (m.pending || m.failed) {
+      if (m.failed)
+        items.push({
+          label: 'Retry',
+          icon: 'refresh-outline',
+          onPress: () => messenger.retryMessage(m),
+        });
+      if (m.body)
+        items.push({
+          label: 'Copy',
+          icon: 'copy-outline',
+          onPress: () => Clipboard.setStringAsync(m.body),
+        });
+      items.push({
+        label: m.file ? 'Cancel sending' : 'Delete',
+        icon: 'trash-outline',
+        danger: true,
+        onPress: () => messenger.discard(m),
+      });
+      return items;
+    }
     const canEdit =
       mine &&
       m.kind === 'text' &&
@@ -425,18 +469,31 @@ export function ChatScreen({
           </Pressable>
         </View>
       )}
-      {live && callable && !inThisCall && myState !== 'ringing' ? (
+      {live &&
+      callable &&
+      !inThisCall &&
+      myState !== 'ringing' &&
+      // Your own call still ringing can't be moved; it has nothing to move yet.
+      !(myState === 'joined' && !live.answeredAt) ? (
         <Pressable
           style={styles.callbar}
-          onPress={() => calls.join(live, false)}>
+          onPress={() =>
+            calls.join(live, myState === 'joined' ? live.video : false)
+          }>
           <Ionicons
             name={live.video ? 'videocam' : 'call'}
             size={16}
             color="#fff"
           />
-          <Text style={styles.callbarText}>Call in progress · Tap to join</Text>
+          <Text style={styles.callbarText}>
+            {/* Joining moves the call here; the other device drops out of it. */}
+            {myState === 'joined'
+              ? 'On this call on another device · Tap to move it here'
+              : 'Call in progress · Tap to join'}
+          </Text>
         </Pressable>
       ) : null}
+      <ConnectionBar messenger={messenger} />
       <KeyboardAvoidingView
         style={{flex: 1}}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -489,6 +546,12 @@ export function ChatScreen({
                 <View style={styles.dayWrap}>
                   <Text style={styles.day}>{item.day}</Text>
                 </View>
+              ) : item.unread ? (
+                <View style={styles.unreadWrap}>
+                  <Text style={styles.unreadText}>
+                    {item.unread} unread message{item.unread === 1 ? '' : 's'}
+                  </Text>
+                </View>
               ) : (
                 <Bubble
                   m={item.m!}
@@ -507,6 +570,11 @@ export function ChatScreen({
                   }
                   onCallBack={video => callable && call(video)}
                   onOriginal={m => translate(m, null)}
+                  progress={
+                    item.m!.clientId
+                      ? messenger.progress.get(item.m!.clientId)
+                      : undefined
+                  }
                 />
               )
             }
@@ -543,6 +611,8 @@ export function ChatScreen({
             onSend={send}
             onFiles={sendFiles}
             onTyping={() => messenger.sendTyping(id)}
+            draft={messenger.draftOf(id)}
+            onDraft={text => messenger.setDraft(id, text)}
           />
         </SafeAreaView>
       </KeyboardAvoidingView>
@@ -797,6 +867,13 @@ const styles = StyleSheet.create({
   },
   callbarText: {color: '#fff', fontWeight: '600'},
   chat: {flex: 1, backgroundColor: BRAND.chat},
+  unreadWrap: {
+    alignItems: 'center',
+    marginVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    paddingVertical: 4,
+  },
+  unreadText: {color: BRAND.accent, fontWeight: '700', fontSize: 12.5},
   dayWrap: {alignItems: 'center', marginVertical: 8},
   day: {
     backgroundColor: '#fff',

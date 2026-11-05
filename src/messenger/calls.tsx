@@ -19,7 +19,12 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
 import {activateKeepAwakeAsync, deactivateKeepAwake} from 'expo-keep-awake';
-import {requestRecordingPermissionsAsync} from 'expo-audio';
+import {
+  createAudioPlayer,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  type AudioPlayer,
+} from 'expo-audio';
 import * as ImagePicker from 'expo-image-picker';
 import {
   AudioSession,
@@ -27,13 +32,16 @@ import {
   VideoTrack,
   isTrackReference,
   useLocalParticipant,
+  useRemoteParticipants,
+  useRoomContext,
   useTracks,
 } from '@livekit/react-native';
 import {Track} from 'livekit-client';
 import {relay} from './api';
 import {BRAND, RING_SECONDS} from './config';
 import {clock, convTitle, personOf} from './format';
-import {useMessenger} from './store';
+import {useMaybeMessenger} from './store';
+import {dismissCallNotifications} from './notify';
 import type {Call} from './types';
 import {Avatar} from './components/Avatar';
 
@@ -51,12 +59,43 @@ type Session = {
 };
 type CallsApi = {
   start: (conversationId: string, video: boolean) => void;
-  join: (call: Call, video: boolean) => void;
+  // answer: pressed Answer on a ringing call (refused if answered on another device).
+  join: (call: Call, video: boolean, answer?: boolean) => void;
   current: Session | null;
 };
 const Context = createContext<CallsApi | null>(null);
 export const useCalls = () => useContext(Context)!;
 let keys = 0;
+
+// LiveKit's DisconnectReason values (livekit/protocol).
+const CLIENT_INITIATED = 1;
+const DUPLICATE_IDENTITY = 2;
+const PARTICIPANT_REMOVED = 4;
+const ROOM_DELETED = 5;
+// How long the other side may vanish (switching device, a network blip) before a
+// one-to-one call is treated as over without the server saying so.
+const GONE_MS = 8000;
+
+// The ringtone, for incoming calls while the app is open. It follows the phone's
+// silent switch, as a ringtone should.
+let ringer: AudioPlayer | null = null;
+function ring(on: boolean) {
+  try {
+    if (!on) {
+      ringer?.pause();
+      ringer?.remove();
+      ringer = null;
+      return;
+    }
+    if (ringer) return;
+    setAudioModeAsync({playsInSilentMode: false}).catch(() => {});
+    ringer = createAudioPlayer(require('./sounds/ring.wav'));
+    ringer.loop = true;
+    ringer.play();
+  } catch {
+    ringer = null; // vibration still rings
+  }
+}
 
 async function permissions(video: boolean) {
   const mic = await requestRecordingPermissionsAsync();
@@ -66,8 +105,8 @@ async function permissions(video: boolean) {
 
 // One call at a time, shown over the whole app; minimize it to keep chatting.
 export function CallProvider({children}: {children: React.ReactNode}) {
-  const {messenger} = useMessenger();
-  const me = messenger.me;
+  const messenger = useMaybeMessenger();
+  const me = messenger?.me;
   const [s, setS] = useState<Session | null>(null);
   const ref = useRef<Session | null>(null);
   const ringTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,14 +126,24 @@ export function CallProvider({children}: {children: React.ReactNode}) {
   );
 
   const finish = useCallback(
-    (note?: string, operation?: 'calls.leave' | 'calls.decline') => {
+    (
+      note?: string,
+      operation?: 'calls.leave' | 'calls.decline',
+      dropped = false,
+    ) => {
       const current = ref.current;
       if (!current) return;
       if (ringTimer.current) clearTimeout(ringTimer.current);
       Vibration.cancel();
+      ring(false);
       set(null);
+      if (current.call) dismissCallNotifications(current.call.id);
       if (operation && current.call)
-        relay(operation, {callId: current.call.id}).catch(() => {});
+        relay(operation, {
+          callId: current.call.id,
+          // The server checks whether the employee carries on from another device.
+          ...(dropped ? {dropped: true} : {}),
+        }).catch(() => {});
       if (note) Alert.alert('Call', note);
     },
     [set],
@@ -117,6 +166,10 @@ export function CallProvider({children}: {children: React.ReactNode}) {
           token: result.token,
           mode: result.call.answeredAt ? 'connecting' : 'outgoing',
         });
+        // Something happened to the call before its id came back (a quick decline).
+        const early = earlyEvents.current.get(result.call.id);
+        earlyEvents.current.clear();
+        if (early) onEvent.current(early);
         if (!result.call.answeredAt)
           ringTimer.current = setTimeout(
             () =>
@@ -134,12 +187,14 @@ export function CallProvider({children}: {children: React.ReactNode}) {
   );
 
   const join = useCallback(
-    async (call: Call, video: boolean) => {
+    async (call: Call, video: boolean, answer = false) => {
       const current = ref.current?.call?.id === call.id ? ref.current : null;
       if (ref.current && !current)
         return Alert.alert('Call', "You're already in a call.");
       if (ringTimer.current) clearTimeout(ringTimer.current);
       Vibration.cancel();
+      ring(false);
+      dismissCallNotifications(call.id);
       const key = current?.key ?? ++keys;
       set({
         key,
@@ -150,7 +205,10 @@ export function CallProvider({children}: {children: React.ReactNode}) {
       });
       try {
         await permissions(video);
-        const result = await relay('calls.join', {callId: call.id});
+        const result = await relay('calls.join', {
+          callId: call.id,
+          ...(answer ? {answer: true} : {}),
+        });
         if (now()?.key !== key)
           return relay('calls.leave', {callId: call.id}).catch(() => {});
         patch(key, {call: result.call, url: result.url, token: result.token});
@@ -162,54 +220,81 @@ export function CallProvider({children}: {children: React.ReactNode}) {
     [set, patch, finish, now],
   );
 
-  // Calls arrive on the live stream (or from the push that opened the app).
+  // Signing out of Messenger ends a call in progress.
   useEffect(
-    () =>
-      messenger.onCalls(call => {
-        const current = ref.current;
-        const mine = call.members.find(m => m.user === me)?.state;
-        if (current?.call?.id === call.id) {
-          if (call.endedAt) return finish();
-          // Answered or declined on the ERP desk: stop ringing here.
-          if (current.mode === 'incoming' && mine !== 'ringing')
-            return finish();
-          const answered = call.members.some(
-            m => m.user !== me && m.state === 'joined',
-          );
-          if (current.mode === 'outgoing' && answered) {
-            if (ringTimer.current) clearTimeout(ringTimer.current);
-            return patch(current.key, {
-              call,
-              mode: 'active',
-              answeredAt: Date.now(),
-            });
-          }
-          return patch(current.key, {call});
-        }
-        if (
-          current ||
-          call.endedAt ||
-          call.startedBy === me ||
-          mine !== 'ringing'
-        )
-          return;
-        const key = ++keys;
-        set({
-          key,
-          call,
-          conversationId: call.conversationId,
-          mode: 'incoming',
-          video: call.video,
-        });
-        Vibration.vibrate([0, 600, 400, 600, 400], true);
-        // The caller gives up after RING_SECONDS; stop ringing a little after that.
-        ringTimer.current = setTimeout(
-          () => now()?.key === key && now()?.mode === 'incoming' && finish(),
-          (RING_SECONDS + 10) * 1000,
-        );
-      }),
-    [messenger, me, set, patch, finish, now],
+    () => () => {
+      if (ref.current) finish(undefined, 'calls.leave');
+    },
+    [messenger, finish],
   );
+
+  // Calls arrive on the live stream (or from the push that opened the app).
+  const earlyEvents = useRef(new Map<string, Call>());
+  const onEvent = useRef<(call: Call) => void>(() => {});
+  useEffect(() => {
+    if (!messenger) return;
+    const handle = (call: Call) => {
+      const current = ref.current;
+      const mine = call.members.find(m => m.user === me)?.state;
+      // Our own call starting, before calls.start answered with its id.
+      if (
+        current &&
+        !current.call &&
+        call.conversationId === current.conversationId
+      ) {
+        earlyEvents.current.set(call.id, call);
+        return;
+      }
+      if (current?.call?.id === call.id) {
+        if (call.endedAt)
+          return finish(
+            current.mode === 'outgoing' && call.endReason === 'declined'
+              ? 'Declined'
+              : undefined,
+          );
+        // Answered or declined on the ERP desk: stop ringing here.
+        if (current.mode === 'incoming' && mine !== 'ringing') return finish();
+        const answered = call.members.some(
+          m => m.user !== me && m.state === 'joined',
+        );
+        if (current.mode === 'outgoing' && call.endReason === 'declined')
+          return finish('Declined');
+        if (current.mode === 'outgoing' && answered) {
+          if (ringTimer.current) clearTimeout(ringTimer.current);
+          return patch(current.key, {
+            call,
+            mode: 'active',
+            answeredAt: Date.now(),
+          });
+        }
+        return patch(current.key, {call});
+      }
+      if (
+        current ||
+        call.endedAt ||
+        call.startedBy === me ||
+        mine !== 'ringing'
+      )
+        return;
+      const key = ++keys;
+      set({
+        key,
+        call,
+        conversationId: call.conversationId,
+        mode: 'incoming',
+        video: call.video,
+      });
+      Vibration.vibrate([0, 600, 400, 600, 400], true);
+      ring(true);
+      // The caller gives up after RING_SECONDS; stop ringing a little after that.
+      ringTimer.current = setTimeout(
+        () => now()?.key === key && now()?.mode === 'incoming' && finish(),
+        (RING_SECONDS + 10) * 1000,
+      );
+    };
+    onEvent.current = handle;
+    return messenger.onCalls(handle);
+  }, [messenger, me, set, patch, finish, now]);
   useEffect(() => {
     if (!s?.url) return;
     activateKeepAwakeAsync('call').catch(() => {});
@@ -219,6 +304,10 @@ export function CallProvider({children}: {children: React.ReactNode}) {
   }, [s?.url]);
 
   const api = useMemo(() => ({start, join, current: s}), [start, join, s]);
+  // Always the same Provider, signed in or not, so signing in or out of Messenger never
+  // remounts the app below it.
+  if (!messenger)
+    return <Context.Provider value={api}>{children}</Context.Provider>;
   const c = s ? messenger.convs.get(s.conversationId) : null;
   const title = c
     ? convTitle(c, messenger.people)
@@ -240,19 +329,33 @@ export function CallProvider({children}: {children: React.ReactNode}) {
               ? personOf(messenger.people, s.call.startedBy)
               : undefined
           }
-          onAccept={() => s.call && join(s.call, s.video)}
+          onAccept={() => s.call && join(s.call, s.video, true)}
           onDecline={() => finish(undefined, 'calls.decline')}
           onHangUp={() => finish(undefined, 'calls.leave')}
           onConnected={() =>
             patch(
               s.key,
               s.mode === 'connecting'
-                ? {mode: 'active', answeredAt: Date.now()}
+                ? {
+                    mode: 'active',
+                    // Joining a call under way (or moving it here) keeps its real length.
+                    answeredAt: s.call?.answeredAt
+                      ? Math.min(Date.now(), Date.parse(s.call.answeredAt))
+                      : Date.now(),
+                  }
                 : {},
             )
           }
+          onAnswered={() => {
+            if (s.mode !== 'outgoing') return;
+            if (ringTimer.current) clearTimeout(ringTimer.current);
+            patch(s.key, {mode: 'active', answeredAt: Date.now()});
+          }}
           onMinimize={minimized => patch(s.key, {minimized})}
           onError={text => finish(text, 'calls.leave')}
+          onEnded={(note, tellServer, dropped) =>
+            finish(note, tellServer ? 'calls.leave' : undefined, dropped)
+          }
         />
       ) : null}
     </Context.Provider>
@@ -268,8 +371,14 @@ type ViewProps = {
   onDecline: () => void;
   onHangUp: () => void;
   onConnected: () => void;
+  onAnswered: () => void;
   onMinimize: (v: boolean) => void;
   onError: (text: string) => void;
+  onEnded: (
+    note: string | undefined,
+    tellServer: boolean,
+    dropped?: boolean,
+  ) => void;
 };
 function CallView(p: ViewProps) {
   const {s} = p;
@@ -317,11 +426,57 @@ function CallView(p: ViewProps) {
         options={{adaptiveStream: {pixelDensity: 'screen'}}}
         onConnected={p.onConnected}
         onError={() => p.onError('The call connection failed.')}>
+        <RoomWatcher {...p} />
         {inner}
       </LiveKitRoom>
     </Shell>
   );
 }
+// Why the connection ended decides what to tell the person and the server.
+function RoomWatcher({s, group, onEnded, onAnswered}: ViewProps) {
+  const room = useRoomContext();
+  const remote = useRemoteParticipants();
+  const latest = useRef({s, onEnded, onAnswered});
+  latest.current = {s, onEnded, onAnswered};
+  useEffect(() => {
+    const onDisconnected = (reason?: number) => {
+      const end = latest.current.onEnded;
+      if (reason === CLIENT_INITIATED) return; // we hung up
+      // The same employee picked the call up on another device: it carries on there.
+      if (reason === DUPLICATE_IDENTITY)
+        return end('The call continued on your other device.', false);
+      if (reason === ROOM_DELETED || reason === PARTICIPANT_REMOVED)
+        return end(undefined, false); // the server ended the call
+      end('The call dropped. Check your connection.', true, true);
+    };
+    room.on('disconnected', onDisconnected);
+    return () => {
+      room.off('disconnected', onDisconnected);
+    };
+  }, [room]);
+  // Someone answered: start the call timer here even before the server's event.
+  useEffect(() => {
+    if (remote.length && latest.current.s.mode === 'outgoing')
+      latest.current.onAnswered();
+  }, [remote.length]);
+  // Everyone else gone for a while (their app was killed, or this phone missed the
+  // server's "ended" while in the background): end it rather than sit in an empty room.
+  const answered = !!s.answeredAt;
+  useEffect(() => {
+    if (!answered || remote.length) return;
+    const t = setTimeout(
+      () =>
+        latest.current.onEnded(
+          group ? 'Everyone else left the call.' : 'Call ended',
+          true,
+        ),
+      group ? GONE_MS * 4 : GONE_MS,
+    );
+    return () => clearTimeout(t);
+  }, [answered, remote.length, group]);
+  return null;
+}
+
 function Shell({s, children}: ViewProps & {children: React.ReactNode}) {
   return (
     <View

@@ -16,6 +16,7 @@ import {login, getEmployeeDetailsByUsername, getEmployeeShiftDetails} from '../.
 import {EmployeeContext} from '../context/EmployeeContext';
 import {EyeIcon, EyeOffIcon, UserAppIcon} from './icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {useChatSession, useUnread} from '../messenger';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
@@ -24,6 +25,8 @@ const LoginScreen = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const {setEmployeeDetails} = useContext(EmployeeContext);
+  const chat = useChatSession();
+  const unread = useUnread();
 
 const handleLogin = async () => {
   if (!email || !password) {
@@ -62,6 +65,10 @@ const handleLogin = async () => {
           );
         }
 
+        // One password entry also signs Messenger in (it then stays signed in for 30 days).
+        if (employeeDetails.custom_allow_chat_module && chat.status === 'signedOut') {
+          chat.signIn(email, password).catch(() => {});
+        }
         setEmployeeDetails(employeeDetails);
         navigation.navigate('Home', { screen: 'Attendance' });
       }
@@ -171,6 +178,16 @@ const handleLogin = async () => {
           )}
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={styles.messengerButton}
+          onPress={() => navigation.navigate('Messenger')}
+          disabled={isLoading}>
+          <Text style={styles.messengerButtonText}>
+            {chat.status === 'signedIn' ? 'Open Messenger' : 'Sign in to Messenger only'}
+            {unread ? ` (${unread > 99 ? '99+' : unread})` : ''}
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.spacer} />
 
         <TouchableOpacity onPress={handleContactSupport} disabled={isLoading}>
@@ -254,6 +271,19 @@ const styles = StyleSheet.create({
     marginTop: 20,
     fontSize: 16,
     textDecorationLine: 'underline',
+  },
+  messengerButton: {
+    marginTop: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#153156',
+  },
+  messengerButtonText: {
+    color: '#153156',
+    fontSize: 15,
+    fontWeight: '600',
   },
   spacer: {
     flex: 1,

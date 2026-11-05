@@ -64,7 +64,7 @@ jest.mock('expo-audio', () => ({
     stop: jest.fn(),
     uri: null,
   }),
-  createAudioPlayer: jest.fn(),
+  createAudioPlayer: jest.fn(() => ({play: jest.fn(), pause: jest.fn(), remove: jest.fn()})),
   setAudioModeAsync: jest.fn().mockResolvedValue(undefined),
   requestRecordingPermissionsAsync: jest
     .fn()
@@ -102,6 +102,10 @@ jest.mock('expo-notifications', () => ({
   getExpoPushTokenAsync: jest.fn(),
   getLastNotificationResponseAsync: jest.fn().mockResolvedValue(null),
   addNotificationResponseReceivedListener: jest.fn(() => ({remove: jest.fn()})),
+  getPresentedNotificationsAsync: jest.fn().mockResolvedValue([]),
+  dismissNotificationAsync: jest.fn(),
+  dismissAllNotificationsAsync: jest.fn().mockResolvedValue(undefined),
+  unregisterForNotificationsAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('react-native-sse', () => jest.fn());
@@ -121,4 +125,17 @@ jest.mock('@livekit/react-native', () => ({
   isTrackReference: () => true,
   useLocalParticipant: jest.fn(),
   useTracks: () => [],
+  useRemoteParticipants: () => [],
+  useRoomContext: () => ({on: jest.fn(), off: jest.fn()}),
 }));
+
+jest.mock('expo-secure-store', () => {
+  const store = new Map();
+  return {
+    AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 'afterFirstUnlockThisDeviceOnly',
+    getItemAsync: jest.fn(async key => store.get(key) ?? null),
+    setItemAsync: jest.fn(async (key, value) => void store.set(key, value)),
+    deleteItemAsync: jest.fn(async key => void store.delete(key)),
+    __store: store,
+  };
+});

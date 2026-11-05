@@ -9,8 +9,24 @@ import React, {
 } from 'react';
 import {AppState} from 'react-native';
 import EventSource from 'react-native-sse';
-import {relay, uploadFile} from './api';
+import NetInfo from '@react-native-community/netinfo';
+import {relay, uploadFile, withStatus} from './api';
 import {uid} from './format';
+import {
+  backoff,
+  dropFile,
+  keepFile,
+  loadCache,
+  loadDrafts,
+  loadOutbox,
+  saveCache,
+  saveDrafts,
+  saveOutbox,
+  transient,
+  wipe,
+  type OutItem,
+} from './outbox';
+import {onBeforeSignOut} from './session';
 import type {Call, Conversation, Limits, Message, Person} from './types';
 
 type Thread = {
@@ -33,7 +49,11 @@ const DEFAULT_LIMITS: Limits = {
   callsEnabled: false,
 };
 
-function createMessenger(me: string, bump: () => void) {
+// What the connection bar shows. "online" only once the panel's live stream answered,
+// never just because the phone has a network.
+export type Connection = 'offline' | 'connecting' | 'online';
+
+export function createMessenger(me: string, render: () => void) {
   const people = new Map<string, Person>();
   const convs = new Map<string, Conversation>();
   const threads = new Map<string, Thread>();
@@ -41,6 +61,7 @@ function createMessenger(me: string, bump: () => void) {
   const liveCalls = new Map<string, Call>();
   const hidden = new Set<string>();
   const callListeners = new Set<CallListener>();
+  const callEvents = new Map<string, number>(); // call id -> when its last live event came
   const state = {
     ready: false,
     error: '',
@@ -49,7 +70,60 @@ function createMessenger(me: string, bump: () => void) {
     active: null as string | null,
     foreground: AppState.currentState === 'active',
     nearBottom: true,
+    connection: 'connecting' as Connection,
+    syncing: false,
+    // Showing the phone's saved copy; the server hasn't answered yet.
+    cached: false,
+    // The live connection dropped; the next catch-up shows "Syncing messages".
+    recovering: false,
   };
+  // Every change re-renders and, a moment later, saves the chats to the phone.
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  function bump() {
+    render();
+    if (!saveTimer && state.ready)
+      saveTimer = setTimeout(() => {
+        saveTimer = null;
+        if (closed) return;
+        const lists = new Map<string, Message[]>();
+        for (const [id, th] of threads)
+          if (th.loaded && !th.newer) lists.set(id, th.list);
+        const known = new Set<string>([me]);
+        for (const c of convs.values()) {
+          if (c.peer) known.add(c.peer);
+          if (c.last) known.add(c.last.sender);
+        }
+        for (const list of lists.values())
+          for (const m of list) known.add(m.sender);
+        saveCache(
+          me,
+          [...convs.values()],
+          [...known].map(u => people.get(u)).filter(Boolean) as Person[],
+          lists,
+        );
+      }, 2500);
+  }
+  // ---------- outgoing queue ----------
+  let outbox: OutItem[] = [];
+  let sendingNow = false;
+  let outboxTimer: ReturnType<typeof setTimeout> | null = null;
+  const progress = new Map<string, number>(); // clientId -> 0..1 while uploading
+  const cancels = new Map<string, () => void>();
+  const drafts = new Map<string, string>();
+  let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  let network = true;
+  let streamUp = false;
+  function setConnection() {
+    const next: Connection = !network
+      ? 'offline'
+      : streamUp
+      ? 'online'
+      : 'connecting';
+    if (next !== state.connection) {
+      state.connection = next;
+      render();
+    }
+  }
   let stream: EventSource<any> | null = null;
   let failures = 0;
   let poll: ReturnType<typeof setInterval> | null = null;
@@ -249,8 +323,11 @@ function createMessenger(me: string, bump: () => void) {
     };
     source.addEventListener('ready', () => {
       failures = 0;
+      streamUp = true;
+      setConnection();
       stopPolling();
       resync();
+      kick(true); // the server is reachable: send what's waiting
     });
     source.addEventListener(
       'message',
@@ -261,12 +338,20 @@ function createMessenger(me: string, bump: () => void) {
     source.addEventListener('conversation', e =>
       refreshConv(data(e).conversationId),
     );
-    source.addEventListener('call', e => data(e).call && onCall(data(e).call));
+    source.addEventListener('call', e => {
+      const call = data(e).call;
+      if (!call) return;
+      callEvents.set(call.id, Date.now());
+      onCall(call);
+    });
     const drop = () => {
       if (stream !== source) return;
       source.removeAllEventListeners();
       source.close();
       stream = null;
+      streamUp = false;
+      state.recovering = true;
+      setConnection();
       reconnectLater();
     };
     source.addEventListener('reconnect', drop);
@@ -277,9 +362,11 @@ function createMessenger(me: string, bump: () => void) {
     failures += 1;
     if (failures >= 3) startPolling();
     if (retry) clearTimeout(retry);
+    // With jitter, so many phones coming back at once don't reconnect in lockstep.
     retry = setTimeout(
       connect,
-      Math.min(30_000, 1000 * 2 ** Math.min(failures, 5)),
+      Math.min(30_000, 1000 * 2 ** Math.min(failures, 5)) *
+        (0.5 + Math.random() * 0.5),
     );
   }
   function startPolling() {
@@ -289,7 +376,21 @@ function createMessenger(me: string, bump: () => void) {
     if (poll) clearInterval(poll);
     poll = null;
   }
-  async function resync() {
+  let resyncing: Promise<void> | null = null;
+  function resync() {
+    // One catch-up at a time; a second request joins the one running.
+    if (!resyncing)
+      resyncing = catchUp().finally(() => {
+        resyncing = null;
+        state.syncing = false;
+        state.recovering = false;
+        bump();
+      });
+    return resyncing;
+  }
+  async function catchUp() {
+    state.syncing = true;
+    render();
     try {
       const before = state.active ? convs.get(state.active)?.last?.id : null;
       const {conversations} = await relay<{conversations: Conversation[]}>(
@@ -305,12 +406,15 @@ function createMessenger(me: string, bump: () => void) {
       if (state.active && convs.get(state.active)?.last?.id !== before)
         await loadMessages(state.active);
       if (state.limits.callsEnabled) {
+        const asked = Date.now();
         const {calls} = await relay<{calls: Call[]}>('calls.live');
+        // Live events that arrived while this was on its way are newer: keep them.
+        const newer = (id: string) => (callEvents.get(id) || 0) >= asked;
         const now = new Set(calls.map(c => c.conversationId));
         for (const [conversationId, call] of [...liveCalls])
-          if (!now.has(conversationId))
+          if (!now.has(conversationId) && !newer(call.id))
             onCall({...call, endedAt: new Date().toISOString()});
-        calls.forEach(onCall);
+        calls.filter(c => !newer(c.id)).forEach(onCall);
       }
       bump();
     } catch {
@@ -330,13 +434,79 @@ function createMessenger(me: string, bump: () => void) {
     } else {
       stream?.close();
       stream = null;
+      streamUp = false;
+      setConnection();
       stopPolling();
       if (retry) clearTimeout(retry);
     }
   });
+  // The phone's network went away or came back (Wi-Fi to mobile data, airplane mode).
+  const netinfo = NetInfo.addEventListener(info => {
+    const up = info.isConnected !== false && info.isInternetReachable !== false;
+    if (up === network) return;
+    network = up;
+    setConnection();
+    if (up && state.foreground) {
+      failures = 0;
+      if (!state.ready || state.cached) start();
+      else if (!stream) connect();
+      kick(true);
+    }
+  });
+  // Now and then, compare everything with the server in case an event was missed.
+  const reconcile = setInterval(() => {
+    if (state.foreground && streamUp) resync();
+  }, 5 * 60_000);
 
   // ---------- actions ----------
+  let restored = false;
+  let bootTry = 0;
+  let booting = false;
+  let bootTimer: ReturnType<typeof setTimeout> | null = null;
+  async function restore() {
+    if (restored) return;
+    restored = true;
+    const [cache, saved, queued] = await Promise.all([
+      loadCache(me),
+      loadDrafts(me),
+      loadOutbox(me),
+    ]);
+    if (closed) return;
+    for (const [id, text] of Object.entries(saved))
+      if (text) drafts.set(id, text);
+    if (cache && !state.ready) {
+      for (const p of cache.people)
+        if (!people.has(p.user)) people.set(p.user, p);
+      for (const c of cache.conversations) mergeConv(c);
+      for (const [id, list] of cache.threads) {
+        const th = thread(id);
+        if (!th.loaded) {
+          th.list = list;
+          th.loaded = true;
+          th.stale = true;
+          th.more = true;
+        }
+      }
+      state.cached = true;
+      state.ready = true;
+    }
+    outbox = queued;
+    for (const item of outbox) upsert(localOf(item));
+    render();
+  }
   async function start() {
+    if (booting) return;
+    booting = true;
+    if (bootTimer) clearTimeout(bootTimer);
+    try {
+      await boot();
+    } finally {
+      booting = false;
+    }
+  }
+  async function boot() {
+    await restore();
+    if (closed) return;
     try {
       const boot = await relay('bootstrap');
       state.me = boot.me;
@@ -347,18 +517,32 @@ function createMessenger(me: string, bump: () => void) {
         callsEnabled: !!boot.callsEnabled,
       };
       people.set(me, {...boot.me});
-      for (const c of boot.conversations) mergeConv(c);
+      const seen = new Set<string>();
+      for (const c of boot.conversations) {
+        seen.add(c.id);
+        mergeConv(c);
+      }
+      // Chats the phone remembered that are gone (left, removed) leave the list.
+      for (const id of [...convs.keys()]) if (!seen.has(id)) convs.delete(id);
+      for (const [id, th] of threads) if (id !== state.active) th.stale = true;
+      if (state.active) loadMessages(state.active);
       for (const call of boot.calls || []) onCall(call);
       state.ready = true;
+      state.cached = false;
       state.error = '';
+      bootTry = 0;
       bump();
     } catch (error: any) {
       state.error = error.message;
       bump();
+      // Keep trying by itself; the saved chats stay on screen meanwhile.
+      if (!closed && transient(error))
+        bootTimer = setTimeout(start, backoff(bootTry++));
       return;
     }
     loadDirectory();
     connect();
+    kick(true);
   }
   async function loadDirectory() {
     try {
@@ -417,21 +601,134 @@ function createMessenger(me: string, bump: () => void) {
       bump();
     }
   }
+  // Sending: the message shows at once and is saved in the outgoing queue before any
+  // network attempt. The queue sends in order, one at a time, with the same clientId on
+  // every attempt; the server answers a repeat with the original message, so a lost
+  // reply never makes a duplicate. Only a refusal from the server marks it failed.
+  function localOf(item: OutItem): Message {
+    const f = item.file;
+    return {
+      id: 'local-' + item.clientId,
+      clientId: item.clientId,
+      conversationId: item.conversationId,
+      sender: me,
+      kind: f
+        ? f.voice
+          ? 'voice'
+          : /^image\//.test(f.mime)
+          ? 'image'
+          : 'file'
+        : 'text',
+      body: item.body,
+      createdAt: item.createdAt,
+      reply: item.replyTo || null,
+      file: f ? {name: f.name, size: f.size, mime: f.mime} : null,
+      reactions: [],
+      pending: item.state === 'queued',
+      failed: item.state === 'failed',
+      error: item.error,
+      upload: f ? {...f} : undefined,
+    };
+  }
+  const saveQueue = () => saveOutbox(me, outbox);
+  function enqueue(item: OutItem) {
+    outbox.push(item);
+    saveQueue();
+    upsert(localOf(item));
+    bump();
+    kick(true);
+  }
+  function kick(now = false) {
+    if (now && outboxTimer) {
+      clearTimeout(outboxTimer);
+      outboxTimer = null;
+    }
+    if (!outboxTimer && !sendingNow) processQueue();
+  }
+  async function processQueue() {
+    if (sendingNow || closed) return;
+    sendingNow = true;
+    try {
+      for (;;) {
+        const item = outbox.find(i => i.state === 'queued');
+        if (!item || closed) return;
+        try {
+          const message = await deliver(item);
+          outbox = outbox.filter(i => i.clientId !== item.clientId);
+          saveQueue();
+          dropFile(item);
+          progress.delete(item.clientId);
+          onMessage(message, true);
+        } catch (error: any) {
+          progress.delete(item.clientId);
+          if (!outbox.includes(item)) continue; // cancelled meanwhile
+          if (transient(error)) {
+            item.attempts += 1;
+            saveQueue();
+            bump();
+            // Wait, then try again; reconnecting or reopening the app retries sooner.
+            outboxTimer = setTimeout(() => {
+              outboxTimer = null;
+              kick();
+            }, backoff(item.attempts));
+            return;
+          }
+          item.state = 'failed';
+          item.error = error.message;
+          saveQueue();
+          upsert(localOf(item));
+          bump();
+        }
+      }
+    } finally {
+      sendingNow = false;
+    }
+  }
+  async function deliver(item: OutItem): Promise<Message> {
+    if (item.file && !item.fileId) {
+      progress.set(item.clientId, 0);
+      bump();
+      let last = 0;
+      const uploaded = await uploadFile(
+        item.conversationId,
+        item.file,
+        fraction => {
+          progress.set(item.clientId, fraction);
+          if (fraction - last >= 0.05 || fraction === 1) {
+            last = fraction;
+            render();
+          }
+        },
+        cancel => cancels.set(item.clientId, cancel),
+      ).finally(() => cancels.delete(item.clientId));
+      item.fileId = uploaded.id; // a later retry only sends the message
+      saveQueue();
+    }
+    const {message} = await relay('messages.send', {
+      conversationId: item.conversationId,
+      clientId: item.clientId,
+      body: item.body,
+      ...(item.replyTo ? {replyTo: item.replyTo.id} : {}),
+      ...(item.fileId ? {fileId: item.fileId, voice: !!item.file?.voice} : {}),
+    });
+    return message;
+  }
   async function send(
     conversationId: string,
     body: string,
     replyTo?: Message | null,
-    clientId = uid(),
   ) {
-    const local: Message = {
-      id: 'local-' + clientId,
-      clientId,
+    if (body.length > state.limits.body)
+      throw withStatus(
+        `Messages can be up to ${state.limits.body} characters.`,
+        400,
+      );
+    enqueue({
+      clientId: uid(),
       conversationId,
-      sender: me,
-      kind: 'text',
-      body,
       createdAt: new Date().toISOString(),
-      reply: replyTo
+      body,
+      replyTo: replyTo
         ? {
             id: replyTo.id,
             sender: replyTo.sender,
@@ -439,31 +736,15 @@ function createMessenger(me: string, bump: () => void) {
             file: replyTo.file?.name,
           }
         : null,
-      reactions: [],
-      pending: true,
-    };
-    upsert(local);
-    bump();
-    try {
-      const {message} = await relay('messages.send', {
-        conversationId,
-        clientId,
-        body,
-        replyTo: replyTo?.id,
-      });
-      onMessage(message, true);
-    } catch (error) {
-      upsert({...local, pending: false, failed: true});
-      bump();
-      throw error;
-    }
+      state: 'queued',
+      attempts: 0,
+    });
   }
-  // The chat is fixed when the file is chosen; a failed upload keeps a retry.
+  // The chat is fixed when the file is chosen.
   async function sendFile(
     conversationId: string,
     file: {uri: string; name: string; mime: string; size: number},
     voice = false,
-    clientId = uid(),
   ) {
     if (file.size > state.limits.fileBytes)
       throw new Error(
@@ -471,46 +752,52 @@ function createMessenger(me: string, bump: () => void) {
           state.limits.fileBytes / 1048576,
         )} MB.`,
       );
-    const kind: Message['kind'] = voice
-      ? 'voice'
-      : /^image\//.test(file.mime)
-      ? 'image'
-      : 'file';
-    const local: Message = {
-      id: 'local-' + clientId,
+    const clientId = uid();
+    enqueue({
       clientId,
       conversationId,
-      sender: me,
-      kind,
-      body: '',
       createdAt: new Date().toISOString(),
-      file: {name: file.name, size: file.size, mime: file.mime},
-      reactions: [],
-      pending: true,
-      upload: {...file, voice},
-    };
-    upsert(local);
-    bump();
-    try {
-      const uploaded = await uploadFile(conversationId, file);
-      const {message} = await relay('messages.send', {
-        conversationId,
-        clientId,
-        body: '',
-        fileId: uploaded.id,
-        voice,
-      });
-      onMessage(message, true);
-    } catch (error) {
-      upsert({...local, pending: false, failed: true});
-      bump();
-      throw error;
-    }
+      body: '',
+      file: await keepFile(clientId, {...file, voice}),
+      state: 'queued',
+      attempts: 0,
+    });
   }
   function retryMessage(m: Message) {
-    if (m.upload)
-      return sendFile(m.conversationId, m.upload, m.upload.voice, m.clientId);
-    return send(m.conversationId, m.body, null, m.clientId);
+    const item = outbox.find(i => i.clientId === m.clientId);
+    if (!item) return Promise.resolve();
+    item.state = 'queued';
+    item.error = undefined;
+    item.attempts = 0;
+    saveQueue();
+    upsert(localOf(item));
+    bump();
+    kick(true);
+    return Promise.resolve();
+  }
+  // Cancel a message not sent yet (stops its upload).
+  function discard(m: Message) {
+    const item = outbox.find(i => i.clientId === m.clientId);
+    if (item) {
+      outbox = outbox.filter(i => i !== item);
+      cancels.get(item.clientId)?.();
+      saveQueue();
+      dropFile(item);
+    }
+    const th = thread(m.conversationId);
+    th.list = th.list.filter(x => x.clientId !== m.clientId || x.sender !== me);
+    progress.delete(m.clientId || '');
+    bump();
+  }
+  const pendingCount = () => outbox.filter(i => i.state === 'queued').length;
+  const draftOf = (id: string) => drafts.get(id) || '';
+  function setDraft(id: string, text: string) {
+    if ((drafts.get(id) || '') === text) return;
+    if (text.trim()) drafts.set(id, text);
+    else drafts.delete(id);
+    if (draftTimer) clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => saveDrafts(me, drafts), 600);
+    render();
   }
   async function edit(m: Message, body: string) {
     upsert({...m, body, editedAt: new Date().toISOString()});
@@ -628,8 +915,23 @@ function createMessenger(me: string, bump: () => void) {
       /* best effort */
     }
   }
+  // Signing out on purpose wipes the employee's chats, drafts and queue from the
+  // phone; an automatic sign-out (30 days, password changed) keeps them for next time.
+  const offSignOut = onBeforeSignOut(async wipeAll => {
+    if (wipeAll) await wipe(me);
+  });
   function stop() {
     closed = true;
+    netinfo();
+    clearInterval(reconcile);
+    offSignOut();
+    if (bootTimer) clearTimeout(bootTimer);
+    if (outboxTimer) clearTimeout(outboxTimer);
+    if (saveTimer) clearTimeout(saveTimer);
+    if (draftTimer) {
+      clearTimeout(draftTimer);
+      saveDrafts(me, drafts);
+    }
     stream?.close();
     stopPolling();
     if (retry) clearTimeout(retry);
@@ -654,6 +956,11 @@ function createMessenger(me: string, bump: () => void) {
     send,
     sendFile,
     retryMessage,
+    discard,
+    pendingCount,
+    progress,
+    draftOf,
+    setDraft,
     edit,
     remove,
     react,
@@ -685,15 +992,17 @@ function createMessenger(me: string, bump: () => void) {
 }
 export type Messenger = ReturnType<typeof createMessenger>;
 
-const Context = createContext<{messenger: Messenger; version: number} | null>(
-  null,
-);
+const Context = createContext<{
+  messenger: Messenger | null;
+  version: number;
+} | null>(null);
 
+// One Messenger per signed-in employee; none while Messenger is signed out.
 export function MessengerProvider({
   user,
   children,
 }: {
-  user: string;
+  user: string | null;
   children: React.ReactNode;
 }) {
   const [version, setVersion] = useState(0);
@@ -707,19 +1016,27 @@ export function MessengerProvider({
       setVersion(v => v + 1);
     });
   }, []);
-  const messenger = useMemo(() => createMessenger(user, bump), [user, bump]);
+  const messenger = useMemo(
+    () => (user ? createMessenger(user, bump) : null),
+    [user, bump],
+  );
   useEffect(() => {
+    if (!messenger) return;
     messenger.start();
     return () => messenger.stop();
   }, [messenger]);
   const value = useMemo(() => ({messenger, version}), [messenger, version]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
+// For screens shown only while signed in.
 export function useMessenger() {
   const value = useContext(Context);
-  if (!value)
-    throw new Error('useMessenger must be used inside MessengerProvider');
-  return value;
+  if (!value?.messenger)
+    throw new Error('useMessenger needs a signed-in Messenger');
+  return value as {messenger: Messenger; version: number};
+}
+export function useMaybeMessenger() {
+  return useContext(Context)?.messenger || null;
 }
 export function totalUnread(m: Messenger) {
   let n = 0;
@@ -728,8 +1045,8 @@ export function totalUnread(m: Messenger) {
       n += c.unread || 0;
   return n;
 }
-// The Chat tab's badge; 0 when Messenger isn't on (no chat access).
+// The Chat tab's badge; 0 while Messenger is signed out.
 export function useUnread() {
   const value = useContext(Context);
-  return value ? totalUnread(value.messenger) : 0;
+  return value?.messenger ? totalUnread(value.messenger) : 0;
 }

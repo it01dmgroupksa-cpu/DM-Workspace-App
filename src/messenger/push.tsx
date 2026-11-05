@@ -7,6 +7,8 @@ import {relay} from './api';
 import {EXPO_PROJECT_ID} from './config';
 import {useCalls} from './calls';
 import {openChat} from './navigation';
+import {dismissCallNotifications} from './notify';
+import {onBeforeSignOut} from './session';
 import {useMessenger, type Messenger} from './store';
 import type {Call} from './types';
 
@@ -80,13 +82,19 @@ async function register() {
   });
   await AsyncStorage.setItem(TOKEN_KEY, token);
 }
-// Signing out stops this phone getting the employee's messages.
+// Signing out of Messenger stops this phone getting the employee's messages. Even if
+// the panel can't be told (the session already ended), dropping the phone's push
+// registration makes the token invalid, and the panel forgets it on the next send.
 export async function unregisterPush() {
   const token = await AsyncStorage.getItem(TOKEN_KEY).catch(() => null);
-  if (!token) return;
   await AsyncStorage.removeItem(TOKEN_KEY).catch(() => {});
-  await relay('devices.unregister', {token}).catch(() => {});
+  if (token) await relay('devices.unregister', {token}).catch(() => {});
+  if (Device.isDevice)
+    await Notifications.unregisterForNotificationsAsync().catch(() => {});
+  await Notifications.dismissAllNotificationsAsync().catch(() => {});
 }
+
+onBeforeSignOut(unregisterPush);
 
 export function PushBridge() {
   const {messenger} = useMessenger();
@@ -98,9 +106,19 @@ export function PushBridge() {
     setup()
       .then(register)
       .catch(() => console.warn('Push notifications are not available.'));
+    // Back in the app: clear call notifications for calls that are over.
+    const clean = () =>
+      dismissCallNotifications(
+        undefined,
+        new Set([...messenger.liveCalls.values()].map(c => c.id)),
+      );
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') setTimeout(clean, 3000); // after the catch-up
+    });
+    setTimeout(clean, 5000);
     return () => {
       messengerRef = null;
-      unregisterPush();
+      sub.remove();
     };
   }, [messenger]);
 
@@ -121,17 +139,25 @@ export function PushBridge() {
           () => ({calls: [] as Call[]}),
         );
         const call = live.find(x => x.id === data.callId);
-        if (!call) return;
-        if (response.actionIdentifier === 'decline')
-          return void relay('calls.decline', {callId: call.id}).catch(() => {});
-        return callsRef.current.join(call, !!data.video);
+        const mine = call?.members.find(m => m.user === messenger.me)?.state;
+        dismissCallNotifications(data.callId);
+        // Still ringing for me: answer or decline it here. Already answered on another
+        // device, or over: just open the chat, never take the call over by accident.
+        if (call && mine === 'ringing') {
+          if (response.actionIdentifier === 'decline')
+            return void relay('calls.decline', {callId: call.id}).catch(
+              () => {},
+            );
+          return callsRef.current.join(call, !!data.video, true);
+        }
+        if (response.actionIdentifier === 'decline') return;
       }
       // Opening the chat; a call still ringing shows its screen from the live calls.
       const tryOpen = (left: number) => {
         if (!openChat(data.conversationId) && left > 0)
           setTimeout(() => tryOpen(left - 1), 300);
       };
-      tryOpen(10);
+      tryOpen(20); // the splash screen shows for 3 seconds
       if (data.type === 'call') messenger.resync();
     }
     Notifications.getLastNotificationResponseAsync().then(handle);

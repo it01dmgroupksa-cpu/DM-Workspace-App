@@ -42,6 +42,7 @@ export type Message = {
   // Only on this phone, until the panel confirms.
   pending?: boolean;
   failed?: boolean;
+  error?: string; // why the server refused it
   upload?: {
     uri: string;
     name: string;

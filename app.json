@@ -2,6 +2,7 @@
   "name": "DM Workspace App",
   "plugins": [
     "expo-audio",
-    "expo-video"
+    "expo-video",
+    "expo-secure-store"
   ]
 }

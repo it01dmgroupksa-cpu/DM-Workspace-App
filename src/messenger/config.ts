@@ -1,8 +1,7 @@
 // Durar Messenger in the DM Workspace app. Everything goes through the same ERP
-// Server Script as the Messenger block on the ERP desk (durar_messenger), using the
-// ERP session the app already signs in with, so ERP decides who is an employee.
+// Server Script as the Messenger block on the ERP desk (durar_messenger), using
+// Messenger's own 30-day ERP session (session.tsx), so ERP decides who is an employee.
 export const ERP_ORIGIN = 'https://dmgroup.frappe.cloud';
-export const RELAY_URL = `${ERP_ORIGIN}/api/method/durar_messenger`;
 
 // Expo project id used for push notifications (Expo push service). Set it after
 // creating the project with `eas init`; with it empty the app still works, but only

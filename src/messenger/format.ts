@@ -159,9 +159,16 @@ export function ticks(
     return 'delivered';
   return 'sent';
 }
-export const uid = () =>
-  `${Date.now().toString(36)}${Math.random()
+// A message's permanent id from this phone: time, a counter (unique even within one
+// millisecond) and randomness (unique across phones).
+let counter = 0;
+export const uid = () => {
+  counter = (counter + 1) % 1_679_616;
+  return `${Date.now().toString(36)}${counter
     .toString(36)
-    .slice(2)}${Math.random().toString(36).slice(2)}`
+    .padStart(4, '0')}${Math.random().toString(36).slice(2)}${Math.random()
+    .toString(36)
+    .slice(2)}`
     .replace(/[^A-Za-z0-9]/g, '')
     .slice(0, 32);
+};

@@ -36,7 +36,7 @@ import DeliveryTrip from './src/components/DeliveryTrip';
 import DMWebView from './src/components/DMWebViewScreen';
 import { EmployeeProvider, EmployeeContext } from './src/context/EmployeeContext';
 import SplashScreen from './src/components/SplashScreen'; // Import SplashScreen
-import { MessengerRoot, MessengerTab, navigationRef, useUnread } from './src/messenger';
+import { MessengerRoot, MessengerScreen, MessengerTab, navigationRef, useUnread } from './src/messenger';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -143,18 +143,7 @@ const MoreNavigator: React.FC = () => {
   );
 };
 
-// Durar Messenger runs for the whole signed-in app, so calls ring on any tab.
 const DynamicTabNavigator: React.FC = () => {
-  const { employeeDetails } = useContext(EmployeeContext);
-  const tabs = <Tabs />;
-  return employeeDetails?.custom_allow_chat_module && employeeDetails?.user_id ? (
-    <MessengerRoot user={employeeDetails.user_id}>{tabs}</MessengerRoot>
-  ) : (
-    tabs
-  );
-};
-
-const Tabs: React.FC = () => {
   const { employeeDetails } = useContext(EmployeeContext);
   const unread = useUnread();
 
@@ -243,11 +232,16 @@ const AppContent: React.FC = () => {
         {isSplashLoading ? (
           <Stack.Screen name="Splash" component={SplashScreen} />
         ) : !employeeDetails ? (
-          <Stack.Screen name="Login" component={LoginScreen} />
+          <>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            {/* Messenger keeps its own 30-day sign-in, so it opens from here too. */}
+            <Stack.Screen name="Messenger" component={MessengerScreen} />
+          </>
         ) : (
           <>
             <Stack.Screen name="Home" component={DynamicTabNavigator} />
             <Stack.Screen name="TaskManagement" component={TaskManagement} />
+            <Stack.Screen name="Messenger" component={MessengerScreen} />
           </>
         )}
       </Stack.Navigator>
@@ -258,7 +252,9 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <EmployeeProvider>
-      <AppContent />
+      <MessengerRoot>
+        <AppContent />
+      </MessengerRoot>
     </EmployeeProvider>
   );
 };

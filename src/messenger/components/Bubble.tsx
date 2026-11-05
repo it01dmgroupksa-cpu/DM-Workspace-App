@@ -27,7 +27,33 @@ type Props = {
   onRetry: (m: Message) => void;
   onCallBack: (video: boolean) => void;
   onOriginal: (m: Message) => void;
+  // 0–1 while this message's file uploads.
+  progress?: number;
 };
+
+// Web addresses in a message open in the browser; everything else stays plain text.
+const URL = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])/gi;
+function Linked({text}: {text: string}) {
+  const parts = text.split(URL);
+  if (parts.length === 1) return <Text style={styles.text}>{text}</Text>;
+  return (
+    <Text style={styles.text}>
+      {parts.map((part, i) =>
+        i % 2 ? (
+          <Text
+            key={i}
+            style={styles.link}
+            accessibilityRole="link"
+            onPress={() => Linking.openURL(part).catch(() => {})}>
+            {part}
+          </Text>
+        ) : (
+          part
+        ),
+      )}
+    </Text>
+  );
+}
 
 function Ticks({state}: {state: ReturnType<typeof ticks>}) {
   if (!state) return null;
@@ -57,6 +83,7 @@ export const Bubble = memo(function Bubble({
   onRetry,
   onCallBack,
   onOriginal,
+  progress,
 }: Props) {
   if (m.kind === 'system') {
     const call = callEntry(m);
@@ -109,7 +136,7 @@ export const Bubble = memo(function Bubble({
         first && {marginTop: 8},
       ]}>
       <Pressable
-        onLongPress={() => !m.deleted && !m.pending && onMenu(m)}
+        onLongPress={() => !m.deleted && onMenu(m)}
         onPress={() => m.failed && onRetry(m)}
         delayLongPress={300}
         style={[
@@ -174,9 +201,30 @@ export const Bubble = memo(function Bubble({
                   size={20}
                   color={m.failed ? BRAND.danger : BRAND.sub}
                 />
-                <Text numberOfLines={1} style={styles.fileName}>
-                  {m.kind === 'voice' ? 'Voice message' : f.name}
-                </Text>
+                <View style={styles.grow}>
+                  <Text numberOfLines={1} style={styles.fileName}>
+                    {m.kind === 'voice' ? 'Voice message' : f.name}
+                  </Text>
+                  <Text style={styles.fileSize}>
+                    {m.failed
+                      ? 'Not sent'
+                      : progress !== undefined
+                      ? `Uploading ${Math.round(progress * 100)}% of ${fileSize(
+                          f.size,
+                        )}`
+                      : `Waiting to send · ${fileSize(f.size)}`}
+                  </Text>
+                  {progress !== undefined && !m.failed ? (
+                    <View style={styles.track}>
+                      <View
+                        style={[
+                          styles.fill,
+                          {width: `${Math.round(progress * 100)}%`},
+                        ]}
+                      />
+                    </View>
+                  ) : null}
+                </View>
               </View>
             ) : f && m.kind === 'image' ? (
               <Pressable onPress={() => onView(m)}>
@@ -216,7 +264,7 @@ export const Bubble = memo(function Bubble({
                 <Ionicons name="download-outline" size={20} color={BRAND.sub} />
               </Pressable>
             ) : null}
-            {shown ? <Text style={styles.text}>{shown}</Text> : null}
+            {shown ? <Linked text={shown} /> : null}
             {m.translation ? (
               <Pressable style={styles.tag} onPress={() => onOriginal(m)}>
                 <Ionicons name="language" size={12} color={BRAND.muted} />
@@ -237,7 +285,9 @@ export const Bubble = memo(function Bubble({
           {mine ? <Ticks state={state} /> : null}
         </View>
         {m.failed ? (
-          <Text style={styles.failed}>Not sent. Tap to retry.</Text>
+          <Text style={styles.failed}>
+            {m.error ? `Not sent: ${m.error}` : 'Not sent.'} Tap to retry.
+          </Text>
         ) : null}
       </Pressable>
       {m.reactions?.length ? (
@@ -257,6 +307,16 @@ export const Bubble = memo(function Bubble({
 });
 
 const styles = StyleSheet.create({
+  grow: {flex: 1},
+  link: {color: BRAND.read, textDecorationLine: 'underline'},
+  track: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: BRAND.line,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  fill: {height: 3, backgroundColor: BRAND.accent},
   row: {paddingHorizontal: 10, marginTop: 2},
   left: {alignItems: 'flex-start'},
   right: {alignItems: 'flex-end'},

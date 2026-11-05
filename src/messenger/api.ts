@@ -1,50 +1,47 @@
 import RNBlobUtil from 'react-native-blob-util';
-import {RELAY_URL} from './config';
+import {currentSession, erpCall, sessionEnded} from './session';
 
-// One call to the durar_messenger Server Script. The ERP session cookie from the app's
-// login is sent automatically; the script proves who the employee is.
+// One call to the durar_messenger Server Script, as Messenger's own ERP session
+// (session.tsx). The script proves who the employee is.
 export async function relay<T = any>(
   operation: string,
   data: Record<string, unknown> = {},
 ): Promise<T> {
-  let response: Response;
-  let body: any = {};
+  const session = currentSession();
+  if (!session) throw new Error('Sign in to Messenger.');
   try {
-    response = await fetch(RELAY_URL, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {Accept: 'application/json', 'Content-Type': 'application/json'},
-      body: JSON.stringify({operation, data: JSON.stringify(data)}),
-    });
-    body = await response.json().catch(() => ({}));
-  } catch {
-    throw new Error('No connection. Check your network.');
+    const {message} = await erpCall<T>(
+      'durar_messenger',
+      {operation, data: JSON.stringify(data)},
+      session.sid,
+    );
+    return message;
+  } catch (error: any) {
+    // ERP refused the session itself: signed out, password changed, no longer an
+    // active employee. A script older than this app ("not available") is not that.
+    if (
+      (error.status === 401 || error.status === 403) &&
+      !/operation is not available/i.test(error.message) &&
+      currentSession() === session
+    )
+      sessionEnded(error.message);
+    throw withStatus(error.message, error.status);
   }
-  if (!response.ok || body.exc || body.exc_type)
-    throw new Error(errorText(body, response.status));
-  return body.message as T;
 }
-
-export function errorText(body: any, status: number) {
-  let detail = '';
-  try {
-    detail =
-      JSON.parse(JSON.parse(body._server_messages || '[]')[0] || '{}')
-        .message || '';
-  } catch {
-    /* no readable message */
-  }
-  if (!detail && status === 403)
-    detail = 'Your ERP session ended. Sign in again.';
-  return String(detail || body.exception || 'Messenger request failed')
-    .replace(/<[^>]+>/g, '')
-    .slice(0, 300);
+// The status lets the outgoing queue tell "offline, retry" from "refused".
+export function withStatus(message: string, status: number) {
+  const error: Error & {status?: number} = new Error(message);
+  error.status = status;
+  return error;
 }
 
 // Files go straight to the panel with a one-chat upload ticket; the body is the raw file.
+// `onProgress` gets 0–1; `onTask` gets a cancel function for the upload in flight.
 export async function uploadFile(
   conversationId: string,
   file: {uri: string; name: string; mime: string},
+  onProgress?: (fraction: number) => void,
+  onTask?: (cancel: () => void) => void,
 ) {
   const ticket = await relay<{url: string; maxBytes: number}>('files.ticket', {
     conversationId,
@@ -52,7 +49,7 @@ export async function uploadFile(
   const path = decodeURIComponent(file.uri.replace(/^file:\/\//, ''));
   let response;
   try {
-    response = await RNBlobUtil.fetch(
+    const task = RNBlobUtil.fetch(
       'POST',
       ticket.url,
       {
@@ -61,8 +58,16 @@ export async function uploadFile(
       },
       RNBlobUtil.wrap(path),
     );
-  } catch {
-    throw new Error('Upload failed. Check your network.');
+    onTask?.(() => task.cancel());
+    if (onProgress)
+      task.uploadProgress({interval: 250}, (sent, total) =>
+        onProgress(Number(total) > 0 ? Number(sent) / Number(total) : 0),
+      );
+    response = await task;
+  } catch (error: any) {
+    if (/cancel/i.test(String(error?.message)))
+      throw withStatus('Upload cancelled.', -1);
+    throw withStatus('Upload failed. Check your network.', 0);
   }
   let json: any = {};
   try {
@@ -70,7 +75,7 @@ export async function uploadFile(
   } catch {
     /* not JSON */
   }
-  if (response.info().status >= 400)
-    throw new Error(json?.error || 'Upload failed.');
+  const status = response.info().status;
+  if (status >= 400) throw withStatus(json?.error || 'Upload failed.', status);
   return json.file as {id: string};
 }

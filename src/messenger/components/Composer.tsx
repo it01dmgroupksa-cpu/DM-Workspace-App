@@ -50,6 +50,9 @@ type Props = {
     conversationId: string,
   ) => void;
   onTyping: () => void;
+  // The chat's saved draft, kept while typing so it survives leaving and restarts.
+  draft?: string;
+  onDraft?: (text: string) => void;
 };
 
 async function sizeOf(uri: string) {
@@ -86,10 +89,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     onSend,
     onFiles,
     onTyping,
+    draft = '',
+    onDraft,
   },
   ref,
 ) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(draft);
   const [menu, setMenu] = useState(false);
   const [recording, setRecording] = useState<{
     started: number;
@@ -240,7 +245,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   function submit() {
     const body = text.replace(/\s+$/, '');
     if (!body.trim()) return;
-    setText('');
+    if (editing) setText(draft); // an edit leaves the draft as it was
+    else {
+      setText('');
+      onDraft?.('');
+    }
     onSend(body);
   }
 
@@ -269,7 +278,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           </View>
           <Pressable
             onPress={() => {
-              if (editing) setText('');
+              if (editing) setText(draft); // back to the draft
               onCancel();
             }}
             accessibilityLabel="Cancel">
@@ -305,6 +314,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               value={text}
               onChangeText={value => {
                 setText(value);
+                if (!editing) onDraft?.(value);
                 if (value.trim()) onTyping();
               }}
               placeholder="Message"

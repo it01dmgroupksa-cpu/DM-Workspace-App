@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useContext, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -26,10 +26,12 @@ import {
   time,
 } from '../format';
 import {useMessenger} from '../store';
-import type {MessengerStack} from '../navigation';
+import {StandaloneContext, type MessengerStack} from '../navigation';
+import {useChatSession} from '../session';
 import type {Conversation} from '../types';
 import {Avatar} from '../components/Avatar';
 import {Sheet, type SheetItem} from '../components/Sheet';
+import {ConnectionBar} from '../components/ConnectionBar';
 
 type Hit = {
   id: string;
@@ -44,6 +46,8 @@ export function ChatsScreen({
 }: StackScreenProps<MessengerStack, 'Chats'>) {
   const {messenger, version} = useMessenger();
   const me = messenger.me;
+  const standalone = useContext(StandaloneContext);
+  const {signOut} = useChatSession();
   const [archived, setArchived] = useState(false);
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<Hit[]>([]);
@@ -97,6 +101,9 @@ export function ChatsScreen({
               color={BRAND.muted}
             />
             <Text style={styles.error}>{error}</Text>
+            <Text style={styles.error}>
+              Messenger keeps trying by itself and opens as soon as it can.
+            </Text>
             <Pressable style={styles.retry} onPress={() => messenger.start()}>
               <Text style={styles.retryText}>Try again</Text>
             </Pressable>
@@ -208,7 +215,16 @@ export function ChatsScreen({
             <Text
               style={[styles.preview, typing && {color: BRAND.accent}]}
               numberOfLines={1}>
-              {typing ? 'typing…' : preview(c, me, messenger.people)}
+              {typing ? (
+                'typing…'
+              ) : messenger.draftOf(c.id) && c.id !== messenger.state.active ? (
+                <>
+                  <Text style={styles.draft}>Draft: </Text>
+                  {messenger.draftOf(c.id).replace(/\s+/g, ' ')}
+                </>
+              ) : (
+                preview(c, me, messenger.people)
+              )}
             </Text>
             {messenger.liveCalls.has(c.id) ? (
               <Ionicons name="call" size={14} color="#16a34a" />
@@ -238,18 +254,47 @@ export function ChatsScreen({
   return (
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        {archived ? (
+        {archived || (standalone && navigation.canGoBack()) ? (
           <Pressable
-            onPress={() => setArchived(false)}
-            style={{padding: 6}}
+            onPress={() =>
+              archived ? setArchived(false) : navigation.goBack()
+            }
+            style={styles.headerBtn}
             accessibilityLabel="Back">
             <Ionicons name="arrow-back" size={23} color="#fff" />
           </Pressable>
         ) : null}
-        <Text style={styles.heading}>
+        <Text style={[styles.heading, styles.flex]}>
           {archived ? 'Archived' : 'Messenger'}
         </Text>
+        {!archived ? (
+          <Pressable
+            onPress={() =>
+              Alert.alert(
+                'Sign out of Messenger?',
+                (messenger.pendingCount()
+                  ? `${messenger.pendingCount()} unsent message${
+                      messenger.pendingCount() === 1 ? '' : 's'
+                    } will be deleted. `
+                  : '') +
+                  "Your chats are removed from this phone, and you won't get message or call notifications here until you sign in again.",
+                [
+                  {text: 'Cancel', style: 'cancel'},
+                  {
+                    text: 'Sign out',
+                    style: 'destructive',
+                    onPress: () => signOut(),
+                  },
+                ],
+              )
+            }
+            style={styles.headerBtn}
+            accessibilityLabel="Sign out of Messenger">
+            <Ionicons name="log-out-outline" size={23} color="#fff" />
+          </Pressable>
+        ) : null}
       </View>
+      <ConnectionBar messenger={messenger} />
       <View style={styles.list}>
         <View style={styles.search}>
           <Ionicons name="search" size={18} color={BRAND.muted} />
@@ -399,6 +444,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
+  flex: {flex: 1},
+  draft: {color: BRAND.danger, fontWeight: '600'},
+  headerBtn: {padding: 6},
   heading: {color: '#fff', fontSize: 21, fontWeight: '700'},
   list: {flex: 1, backgroundColor: '#fff'},
   search: {
