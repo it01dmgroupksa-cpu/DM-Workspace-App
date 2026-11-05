@@ -32,11 +32,11 @@ import LoginScreen from './src/components/Login';
 import DMOfficialMemo from './src/components/DMOfficialMemo';
 import EmployeeProfile from './src/components/EmployeeProfile';
 import MaterialsServiceRequestForm from './src/components/MaterialsServiceRequestForm';
-import ChatComponent from './src/components/ChatComponent';
 import DeliveryTrip from './src/components/DeliveryTrip';
 import DMWebView from './src/components/DMWebViewScreen';
 import { EmployeeProvider, EmployeeContext } from './src/context/EmployeeContext';
 import SplashScreen from './src/components/SplashScreen'; // Import SplashScreen
+import { MessengerRoot, MessengerTab, navigationRef, useUnread } from './src/messenger';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -143,8 +143,20 @@ const MoreNavigator: React.FC = () => {
   );
 };
 
+// Durar Messenger runs for the whole signed-in app, so calls ring on any tab.
 const DynamicTabNavigator: React.FC = () => {
   const { employeeDetails } = useContext(EmployeeContext);
+  const tabs = <Tabs />;
+  return employeeDetails?.custom_allow_chat_module && employeeDetails?.user_id ? (
+    <MessengerRoot user={employeeDetails.user_id}>{tabs}</MessengerRoot>
+  ) : (
+    tabs
+  );
+};
+
+const Tabs: React.FC = () => {
+  const { employeeDetails } = useContext(EmployeeContext);
+  const unread = useUnread();
 
   const flags: Flags = {
     showSales: employeeDetails?.custom_allow_sales_rfq || false,
@@ -197,9 +209,10 @@ const DynamicTabNavigator: React.FC = () => {
       {flags.showChat && (
         <Tab.Screen
           name="Chat"
-          component={ChatComponent}
+          component={MessengerTab}
           options={{
             tabBarIcon: ChatIcon,
+            tabBarBadge: unread ? (unread > 99 ? '99+' : unread) : undefined,
           }}
         />
       )}
@@ -225,7 +238,7 @@ const AppContent: React.FC = () => {
   }, []);
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {isSplashLoading ? (
           <Stack.Screen name="Splash" component={SplashScreen} />
