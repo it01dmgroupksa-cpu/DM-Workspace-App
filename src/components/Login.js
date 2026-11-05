@@ -179,11 +179,18 @@ const handleLogin = async () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.messengerButton}
+          style={[
+            styles.messengerButton,
+            chat.status === 'signedIn' && styles.messengerButtonOn,
+          ]}
           onPress={() => navigation.navigate('Messenger')}
           disabled={isLoading}>
-          <Text style={styles.messengerButtonText}>
-            {chat.status === 'signedIn' ? 'Open Messenger' : 'Sign in to Messenger only'}
+          <Text
+            style={[
+              styles.messengerButtonText,
+              chat.status === 'signedIn' && styles.messengerButtonTextOn,
+            ]}>
+            {chat.status === 'signedIn' ? '● Open Messenger' : 'Sign in to Messenger only'}
             {unread ? ` (${unread > 99 ? '99+' : unread})` : ''}
           </Text>
         </TouchableOpacity>
@@ -279,6 +286,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#103BA9',
+  },
+  messengerButtonOn: {
+    backgroundColor: '#16a34a',
+    borderColor: '#16a34a',
+  },
+  messengerButtonTextOn: {
+    color: '#FFFFFF',
   },
   messengerButtonText: {
     color: '#103BA9',
