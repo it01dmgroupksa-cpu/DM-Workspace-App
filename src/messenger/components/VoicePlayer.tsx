@@ -1,0 +1,145 @@
+import React, {useEffect, useRef, useState} from 'react';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
+import {Ionicons} from '@expo/vector-icons';
+import {
+  createAudioPlayer,
+  setAudioModeAsync,
+  type AudioPlayer,
+} from 'expo-audio';
+import {BRAND} from '../config';
+import {clock} from '../format';
+
+// One voice note plays at a time, as in WhatsApp.
+let current: {id: string; player: AudioPlayer; stop: () => void} | null = null;
+const RATES = [1, 1.5, 2];
+
+export function VoicePlayer({id, url}: {id: string; url: string}) {
+  const [playing, setPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [rate, setRate] = useState(1);
+  const [width, setWidth] = useState(1);
+  const player = useRef<AudioPlayer | null>(null);
+
+  useEffect(
+    () => () => {
+      if (current?.id === id) current = null;
+      player.current?.remove();
+      player.current = null;
+    },
+    [id],
+  );
+  function ensure() {
+    if (player.current) return player.current;
+    const p = createAudioPlayer({uri: url}, {updateInterval: 250});
+    p.addListener('playbackStatusUpdate', status => {
+      setPosition(status.currentTime || 0);
+      if (status.duration && Number.isFinite(status.duration))
+        setDuration(status.duration);
+      setPlaying(!!status.playing);
+      if (status.didJustFinish) {
+        p.pause();
+        p.seekTo(0);
+        setPosition(0);
+        setPlaying(false);
+      }
+    });
+    player.current = p;
+    return p;
+  }
+  async function toggle() {
+    const p = ensure();
+    if (p.playing) return p.pause();
+    if (current && current.id !== id) current.stop();
+    current = {id, player: p, stop: () => p.pause()};
+    await setAudioModeAsync({
+      playsInSilentMode: true,
+      allowsRecording: false,
+    }).catch(() => {});
+    p.setPlaybackRate(rate);
+    p.play();
+  }
+  function cycleRate() {
+    const next = RATES[(RATES.indexOf(rate) + 1) % RATES.length];
+    setRate(next);
+    player.current?.setPlaybackRate(next);
+  }
+  function seek(x: number) {
+    const p = ensure();
+    if (duration) p.seekTo(Math.max(0, Math.min(1, x / width)) * duration);
+  }
+  const progress = duration ? Math.min(1, position / duration) : 0;
+  return (
+    <View style={styles.row}>
+      <Pressable
+        onPress={toggle}
+        style={styles.play}
+        accessibilityLabel={playing ? 'Pause' : 'Play voice message'}>
+        <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#fff" />
+      </Pressable>
+      <Pressable
+        style={styles.track}
+        onLayout={e => setWidth(e.nativeEvent.layout.width)}
+        onPress={e => seek(e.nativeEvent.locationX)}>
+        <View style={styles.rail} />
+        <View style={[styles.fill, {width: `${progress * 100}%`}]} />
+        <View style={[styles.knob, {left: `${progress * 100}%`}]} />
+      </Pressable>
+      <Text style={styles.time}>
+        {clock(position > 0 ? position : duration)}
+      </Text>
+      <Pressable
+        onPress={cycleRate}
+        style={styles.rate}
+        accessibilityLabel="Playback speed">
+        <Text style={styles.rateText}>{rate}×</Text>
+      </Pressable>
+    </View>
+  );
+}
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 250,
+    gap: 8,
+    paddingVertical: 2,
+  },
+  play: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: BRAND.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  track: {flex: 1, height: 28, justifyContent: 'center'},
+  rail: {height: 3, borderRadius: 2, backgroundColor: '#c8d1d6'},
+  fill: {
+    position: 'absolute',
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: BRAND.accent,
+  },
+  knob: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    marginLeft: -6,
+    borderRadius: 6,
+    backgroundColor: BRAND.accent,
+  },
+  time: {
+    minWidth: 34,
+    color: BRAND.muted,
+    fontSize: 12,
+    fontVariant: ['tabular-nums'],
+  },
+  rate: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: '#e3e8eb',
+  },
+  rateText: {fontSize: 11.5, fontWeight: '600', color: BRAND.sub},
+});

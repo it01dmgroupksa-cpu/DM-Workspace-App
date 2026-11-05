@@ -1,3 +1,8 @@
 {
-  "name": "DM Workspace App"
+  "name": "DM Workspace App",
+  "plugins": [
+    "expo-audio",
+    "expo-video",
+    "expo-secure-store"
+  ]
 }

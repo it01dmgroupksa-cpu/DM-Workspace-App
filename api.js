@@ -1902,33 +1902,6 @@ export const getUnitOptions = async () => {
   }
 };
 
-export const getEmployeesWithChatAccess = async () => {
-  try {
-    const response = await api.get('/frappe.client.get_list', {
-      params: {
-        doctype: 'Employee',
-        fields: JSON.stringify([
-          'name',
-          'employee_name',
-          'user_id',
-          'custom_allow_chat_module'
-        ]),
-        filters: JSON.stringify([
-          ['custom_allow_chat_module', '=', 1]
-        ]),
-        limit_page_length: 'None',
-      },
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    return response.data.message;
-  } catch (error) {
-    console.error("Error fetching employees with chat access:");
-    throw error;
-  }
-};
-
 export const getAssignedDeliveryTrips = async (employeeName) => {
   try {
     const response = await api.get('/frappe.client.get_list', {

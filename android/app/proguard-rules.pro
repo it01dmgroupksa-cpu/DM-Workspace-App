@@ -8,3 +8,9 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# Durar Messenger calls: WebRTC and LiveKit are looked up from native code by name,
+# so keep them if minification (android.enableMinifyInReleaseBuilds) is turned on.
+-keep class org.webrtc.** { *; }
+-keep class com.livekit.reactnative.** { *; }
+-keep class com.oney.WebRTCModule.** { *; }
