@@ -129,7 +129,7 @@ const handleLogin = async () => {
         <Text style={styles.subText}>Please sign in to continue</Text>
 
         <View style={styles.inputContainer}>
-          <UserAppIcon width={24} height={24} stroke="#153156" />
+          <UserAppIcon width={24} height={24} stroke="#103BA9" />
           <TextInput
             style={styles.input}
             placeholder="Username"
@@ -144,9 +144,9 @@ const handleLogin = async () => {
 
         <View style={styles.inputContainer}>
           {showPassword ? (
-            <EyeIcon width={24} height={24} stroke="#153156" />
+            <EyeIcon width={24} height={24} stroke="#103BA9" />
           ) : (
-            <EyeOffIcon width={24} height={24} stroke="#153156" />
+            <EyeOffIcon width={24} height={24} stroke="#103BA9" />
           )}
           <TextInput
             style={styles.input}
@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
   welcomeText: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 10,
   },
   subText: {
@@ -247,11 +247,11 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   showHideText: {
-    color: '#153156',
+    color: '#103BA9',
     fontSize: 14,
   },
   loginButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 15,
     borderRadius: 10,
     width: '100%',
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   contactSupportText: {
-    color: '#153156',
+    color: '#103BA9',
     marginTop: 20,
     fontSize: 16,
     textDecorationLine: 'underline',
@@ -278,10 +278,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#153156',
+    borderColor: '#103BA9',
   },
   messengerButtonText: {
-    color: '#153156',
+    color: '#103BA9',
     fontSize: 15,
     fontWeight: '600',
   },

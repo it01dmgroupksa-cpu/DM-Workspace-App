@@ -374,14 +374,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 30,
     textAlign: 'center',
   },
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 8,
     alignSelf: 'flex-start',
   },
@@ -395,7 +395,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 20,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.1,
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   textArea: {
     width: '100%',
@@ -418,7 +418,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginBottom: 20,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     textAlignVertical: 'top',
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 1},
@@ -443,11 +443,11 @@ const styles = StyleSheet.create({
   itemTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 8,
   },
   addButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 16,
     borderRadius: 12,
     width: '100%',
@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   submitButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 16,
     borderRadius: 12,
     width: '100%',
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
   },
   selectedTextStyle: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   inputSearchStyle: {
     height: 40,
@@ -530,12 +530,12 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 20,
     textAlign: 'center',
   },
   saveButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 16,
     borderRadius: 12,
     width: '100%',

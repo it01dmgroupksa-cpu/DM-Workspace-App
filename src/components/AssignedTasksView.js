@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 30,
     textAlign: 'center',
   },
@@ -240,13 +240,13 @@ const styles = StyleSheet.create({
   taskTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 10,
   },
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 8,
   },
   taskDetailContainer: {
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
   taskDetailTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 12,
   },
   checkboxContainer: {
@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderWidth: 2,
-    borderColor: '#153156',
+    borderColor: '#103BA9',
     borderRadius: 4,
     marginRight: 8,
     justifyContent: 'center',
@@ -295,10 +295,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlignVertical: 'top',
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   refreshButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 16,
     borderRadius: 12,
     width: '100%',

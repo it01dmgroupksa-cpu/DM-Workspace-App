@@ -679,7 +679,7 @@ const AttendanceManagement = () => {
       <Modal visible={isLoading || isSubmitting} transparent>
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingContent}>
-            <ActivityIndicator size="large" color="#153156" />
+            <ActivityIndicator size="large" color="#103BA9" />
             <Text style={styles.loadingText}>
               {isLoading
                 ? 'Taking picture, please wait...'
@@ -753,7 +753,7 @@ const AttendanceManagement = () => {
                 <CalendarIcon
                   width={20}
                   height={20}
-                  color="#153156"
+                  color="#103BA9"
                   style={styles.dateTimeIcon}
                 />
                 <Text style={styles.dateTimeText}>
@@ -764,7 +764,7 @@ const AttendanceManagement = () => {
                 <ClockIcon
                   width={20}
                   height={20}
-                  color="#153156"
+                  color="#103BA9"
                   style={styles.dateTimeIcon}
                 />
                 <Text style={styles.dateTimeText}>
@@ -824,7 +824,7 @@ const AttendanceManagement = () => {
           <LocationIcon
             width={24}
             height={24}
-            color="#153156"
+            color="#103BA9"
             style={styles.statusIcon}
           />
           <View>
@@ -867,7 +867,7 @@ const AttendanceManagement = () => {
               <WifiIcon
                 width={24}
                 height={24}
-                color="#153156"
+                color="#103BA9"
                 style={styles.statusIcon}
               />
               <View>
@@ -937,7 +937,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 30,
     textAlign: 'center',
   },
@@ -993,13 +993,13 @@ const styles = StyleSheet.create({
   welcomeTexthead: {
     fontSize: 34,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 10,
   },
   welcomeText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 20,
   },
   dateTimeContainer: {
@@ -1018,12 +1018,12 @@ const styles = StyleSheet.create({
   },
   dateTimeText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     fontWeight: '500',
   },
   button: {
     flexDirection: 'row',
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     paddingVertical: 15,
     borderRadius: 10,
     width: '100%',
@@ -1079,7 +1079,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     fontWeight: 'bold',
   },
   errorText: {
@@ -1103,7 +1103,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -1119,7 +1119,7 @@ const styles = StyleSheet.create({
   },
   modalDetailText: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 10,
   },
   modalButtons: {
@@ -1139,7 +1139,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0E0E0',
   },
   confirmButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
   },
   modalButtonText: {
     color: '#FFFFFF',
@@ -1162,7 +1162,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
   },
   loadingContainer: {
     flex: 1,
@@ -1206,7 +1206,7 @@ const styles = StyleSheet.create({
   logoutModalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#153156',
+    color: '#103BA9',
     marginBottom: 10,
   },
   logoutModalText: {
@@ -1235,7 +1235,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   retryButton: {
-    backgroundColor: '#153156',
+    backgroundColor: '#103BA9',
     padding: 8,
     borderRadius: 5,
     marginTop: 10,
@@ -1268,7 +1268,7 @@ const timeCategoryStyles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#153156',
+    color: '#103BA9',
   },
   pickerContainer: {
     backgroundColor: '#E6EAF0',
@@ -1278,12 +1278,12 @@ const timeCategoryStyles = StyleSheet.create({
   picker: {
     height: 50,
     width: '100%',
-    color: '#153156',
+    color: '#103BA9',
     fontWeight: '500',
   },
   pickerItem: {
     fontSize: 16,
-    color: '#153156',
+    color: '#103BA9',
     fontWeight: '500',
   },
 });

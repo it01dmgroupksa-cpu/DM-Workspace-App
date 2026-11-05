@@ -50,7 +50,7 @@ const SplashScreen: React.FC = () => {
     <View style={styles.container}>
       <Animated.View style={[styles.logoContainer, { opacity: logoOpacity }]}>
         <Image
-          source={require('./images/dmlogo.png')}
+          source={require('./images/dmlogo-white.png')}
           style={styles.logo}
         />
       </Animated.View>
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#153156', // Background color, matching the brand theme
+    backgroundColor: '#103BA9', // Background color, matching the brand theme
   },
   logoContainer: {
     alignItems: 'center',
