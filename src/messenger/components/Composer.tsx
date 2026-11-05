@@ -22,10 +22,12 @@ import {
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
   useAudioRecorder,
+  useAudioRecorderState,
 } from 'expo-audio';
 import RNBlobUtil from 'react-native-blob-util';
 import {BRAND} from '../config';
 import {clock, personOf} from '../format';
+import {Waveform, levelOf} from './Waveform';
 import {
   insertMention,
   matchPeople,
@@ -86,6 +88,9 @@ export type ComposerHandle = {
   finish: () => Promise<void>;
 };
 
+const BARS = 32;
+const RECORD_OPTIONS = {...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true};
+
 export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   {
     conversationId,
@@ -120,7 +125,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     conversationId: string;
   } | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorder = useAudioRecorder(RECORD_OPTIONS);
+  const recState = useAudioRecorderState(recorder, 80);
+  const [levels, setLevels] = useState<number[]>(() => Array(BARS).fill(0.08));
   const starting = useRef(false);
   const live = useRef(true);
 
@@ -135,6 +142,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     } else setChosen(new Map());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
+  // Each reading of the microphone pushes a bar in from the right, like WhatsApp.
+  useEffect(() => {
+    if (!recording) return;
+    setLevels(old => [...old.slice(1), levelOf(recState.metering)]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recState.metering, recState.durationMillis]);
   useEffect(() => {
     if (!recording) return;
     const timer = setInterval(() => {
@@ -181,6 +194,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       await recorder.prepareToRecordAsync();
       recorder.record();
       setElapsed(0);
+      setLevels(Array(BARS).fill(0.08));
       setRecording({started: Date.now(), conversationId: target});
     } catch {
       Alert.alert('Microphone', 'Recording could not start.');
@@ -365,7 +379,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           <View style={styles.recording}>
             <View style={styles.dot} />
             <Text style={styles.recTime}>{clock(elapsed)}</Text>
-            <Text style={styles.recHint}>Recording…</Text>
+            <Waveform levels={levels} height={30} color={BRAND.danger} />
             <Pressable
               onPress={() => stopRecording(true)}
               accessibilityLabel="Discard voice message"
@@ -533,7 +547,6 @@ const styles = StyleSheet.create({
   },
   dot: {width: 10, height: 10, borderRadius: 5, backgroundColor: BRAND.danger},
   recTime: {fontVariant: ['tabular-nums'], color: BRAND.text, fontSize: 16},
-  recHint: {flex: 1, color: BRAND.muted},
   replying: {
     flexDirection: 'row',
     alignItems: 'center',
