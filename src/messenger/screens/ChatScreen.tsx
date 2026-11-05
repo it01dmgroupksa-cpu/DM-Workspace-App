@@ -71,6 +71,24 @@ export function ChatScreen({
   >(null);
   const [atBottom, setAtBottom] = useState(true);
   const pendingJump = useRef<string | null>(null);
+  const [pinIndex, setPinIndex] = useState(0);
+  // The people a message here can @mention: the group's members besides me.
+  const [memberIds, setMemberIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (c?.kind !== 'group' || c.left) return setMemberIds([]);
+    let current = true;
+    messenger
+      .membersOf(id)
+      .then(list => current && setMemberIds(list))
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, c?.kind, c?.left, c?.memberCount]);
+  const mentionable = memberIds
+    .filter(u => u !== me)
+    .map(u => personOf(messenger.people, u));
   // "N unread messages" stays above the first message that was unread on opening,
   // until the chat is closed.
   const openUnread = useRef(c?.unread || 0);
@@ -179,6 +197,7 @@ export function ChatScreen({
     );
 
   const title = convTitle(c, messenger.people);
+  const pinned5 = messenger.pins.get(id) || [];
   const typers = [...(messenger.typing.get(id)?.keys() || [])].filter(
     u => u !== me,
   );
@@ -215,18 +234,21 @@ export function ChatScreen({
     if (live && !inThisCall) return calls.join(live, video);
     calls.start(id, video);
   }
-  async function send(text: string) {
+  async function send(
+    text: string,
+    mention: {users: string[]; all: boolean} = {users: [], all: false},
+  ) {
     try {
       if (editing) {
         const m = editing;
         setEditing(null);
-        if (text !== m.body) await messenger.edit(m, text);
+        if (text !== m.body) await messenger.edit(m, text, mention.users);
         return;
       }
       const reply = replyTo;
       setReplyTo(null);
       list.current?.scrollToOffset({offset: 0, animated: true});
-      await messenger.send(id, text, reply);
+      await messenger.send(id, text, reply, mention);
     } catch (error: any) {
       Alert.alert('Messenger', error.message);
     }
@@ -298,6 +320,22 @@ export function ChatScreen({
       icon: 'arrow-redo-outline',
       onPress: () => setForwarding(m),
     });
+    // Pins are shared by the whole chat (admins only in an admins-only group).
+    if (
+      m.kind !== 'system' &&
+      !c!.left &&
+      !(c!.onlyAdminsSend && c!.role !== 'admin')
+    ) {
+      const pinned = pinned5.some(p => p.id === m.id);
+      items.push({
+        label: pinned ? 'Unpin message' : 'Pin message',
+        icon: pinned ? 'pin' : 'pin-outline',
+        onPress: () =>
+          messenger
+            .pin(m, !pinned)
+            .catch(error => Alert.alert('Pin', error.message)),
+      });
+    }
     if (limits.translation && m.body) {
       if (m.translation)
         items.push({
@@ -494,6 +532,29 @@ export function ChatScreen({
         </Pressable>
       ) : null}
       <ConnectionBar messenger={messenger} />
+      {pinned5.length ? (
+        <Pressable
+          style={styles.pinBar}
+          onPress={() => {
+            const shown = pinned5[pinIndex % pinned5.length];
+            setPinIndex(pinIndex + 1);
+            jumpTo(shown.id);
+          }}
+          accessibilityLabel="Pinned message">
+          <Ionicons name="pin" size={16} color={BRAND.accent} />
+          <View style={styles.pinText}>
+            <Text style={styles.pinTitle}>
+              Pinned message
+              {pinned5.length > 1
+                ? ` · ${(pinIndex % pinned5.length) + 1} of ${pinned5.length}`
+                : ''}
+            </Text>
+            <Text style={styles.pinBody} numberOfLines={1}>
+              {pinPreview(pinned5[pinIndex % pinned5.length])}
+            </Text>
+          </View>
+        </Pressable>
+      ) : null}
       <KeyboardAvoidingView
         style={{flex: 1}}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -604,6 +665,8 @@ export function ChatScreen({
             me={me}
             people={messenger.people}
             inCall={!!calls.current}
+            mentionable={mentionable}
+            canMentionAll={c.kind === 'group' && c.role === 'admin' && !c.left}
             onCancel={() => {
               setReplyTo(null);
               setEditing(null);
@@ -841,7 +904,29 @@ export function ForwardModal({
   );
 }
 
+const pinPreview = (m: Message) =>
+  m.kind === 'voice'
+    ? '🎤 Voice message'
+    : m.kind === 'image'
+    ? `📷 ${m.body || 'Photo'}`
+    : m.kind === 'file'
+    ? `📄 ${m.file?.name || 'File'}`
+    : m.body.replace(/\s+/g, ' ');
+
 const styles = StyleSheet.create({
+  pinBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: BRAND.line,
+  },
+  pinText: {flex: 1},
+  pinTitle: {color: BRAND.accent, fontSize: 12, fontWeight: '700'},
+  pinBody: {color: BRAND.text, fontSize: 14},
   root: {flex: 1, backgroundColor: BRAND.navy},
   center: {flex: 1, alignItems: 'center', justifyContent: 'center'},
   header: {

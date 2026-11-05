@@ -7,11 +7,13 @@ import {
   fileSize,
   hue,
   personOf,
+  pinEntry,
   systemText,
   ticks,
   time,
 } from '../format';
 import type {Conversation, Message, Person} from '../types';
+import {pieces} from '../mentions';
 import {VoicePlayer} from './VoicePlayer';
 
 type Props = {
@@ -32,23 +34,40 @@ type Props = {
 };
 
 // Web addresses in a message open in the browser; everything else stays plain text.
-const URL = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])/gi;
-function Linked({text}: {text: string}) {
-  const parts = text.split(URL);
-  if (parts.length === 1) return <Text style={styles.text}>{text}</Text>;
+function Linked({
+  text,
+  names,
+  meNames,
+}: {
+  text: string;
+  names: string[];
+  meNames: string[];
+}) {
+  const parts = pieces(text, names);
+  if (parts.length === 1 && parts[0].kind === 'text')
+    return <Text style={styles.text}>{text}</Text>;
   return (
     <Text style={styles.text}>
       {parts.map((part, i) =>
-        i % 2 ? (
+        part.kind === 'link' ? (
           <Text
             key={i}
             style={styles.link}
             accessibilityRole="link"
-            onPress={() => Linking.openURL(part).catch(() => {})}>
-            {part}
+            onPress={() => Linking.openURL(part.text).catch(() => {})}>
+            {part.text}
+          </Text>
+        ) : part.kind === 'mention' ? (
+          <Text
+            key={i}
+            style={[
+              styles.mention,
+              meNames.includes(part.text) && styles.mentionMe,
+            ]}>
+            {part.text}
           </Text>
         ) : (
-          part
+          part.text
         ),
       )}
     </Text>
@@ -87,7 +106,19 @@ export const Bubble = memo(function Bubble({
 }: Props) {
   if (m.kind === 'system') {
     const call = callEntry(m);
+    const pinned = pinEntry(m);
     const text = systemText(m, me, people);
+    if (pinned)
+      return (
+        <Pressable
+          style={styles.sysWrap}
+          onPress={() => onQuote(pinned.messageId)}>
+          <View style={styles.sys}>
+            <Ionicons name="pin" size={13} color={BRAND.sub} />
+            <Text style={styles.sysText}>{text}</Text>
+          </View>
+        </Pressable>
+      );
     if (call)
       return (
         <Pressable
@@ -128,6 +159,16 @@ export const Bubble = memo(function Bubble({
   const f = m.file;
   const shown = m.translation?.body || m.body;
   const state = mine ? ticks(m, conv) : null;
+  // "@Name" for each person mentioned, and "@all". Mentions of me stand out.
+  const mentionNames = [
+    ...(m.mentions || []).map(u => '@' + personOf(people, u).name),
+    ...(m.mentionAll ? ['@all'] : []),
+  ].map(n => n.slice(1));
+  const meNames = [
+    '@' + personOf(people, me).name,
+    ...(m.mentionAll ? ['@all'] : []),
+  ];
+  const mentionsMe = !mine && (m.mentionAll || !!m.mentions?.includes(me));
   return (
     <View
       style={[
@@ -142,6 +183,7 @@ export const Bubble = memo(function Bubble({
         style={[
           styles.bubble,
           mine ? styles.mine : styles.theirs,
+          mentionsMe && styles.mentioned,
           highlight && styles.flash,
         ]}>
         {conv.kind === 'group' && !mine && first ? (
@@ -264,7 +306,9 @@ export const Bubble = memo(function Bubble({
                 <Ionicons name="download-outline" size={20} color={BRAND.sub} />
               </Pressable>
             ) : null}
-            {shown ? <Linked text={shown} /> : null}
+            {shown ? (
+              <Linked text={shown} names={mentionNames} meNames={meNames} />
+            ) : null}
             {m.translation ? (
               <Pressable style={styles.tag} onPress={() => onOriginal(m)}>
                 <Ionicons name="language" size={12} color={BRAND.muted} />
@@ -308,6 +352,9 @@ export const Bubble = memo(function Bubble({
 
 const styles = StyleSheet.create({
   grow: {flex: 1},
+  mention: {color: BRAND.accent, fontWeight: '700'},
+  mentionMe: {backgroundColor: 'rgba(245,158,11,0.22)'},
+  mentioned: {backgroundColor: '#fff8e8'},
   link: {color: BRAND.read, textDecorationLine: 'underline'},
   track: {
     height: 3,

@@ -68,6 +68,16 @@ export function lastSeen(p: Person) {
   return `last seen ${dayLabel(p.lastSeenAt)} ${time(p.lastSeenAt)}`;
 }
 
+export function pinEntry(m: Message) {
+  try {
+    const e = JSON.parse(m.body);
+    return e.event === 'pinned' && typeof e.messageId === 'string'
+      ? (e as {messageId: string})
+      : null;
+  } catch {
+    return null;
+  }
+}
 export function callEntry(m: Message) {
   try {
     const e = JSON.parse(m.body);
@@ -103,6 +113,8 @@ export function systemText(
       return `${who} removed ${users}`;
     case 'left':
       return `${who} left`;
+    case 'pinned':
+      return `${who} pinned a message`;
     case 'call': {
       const kind = e.video ? 'Video call' : 'Voice call';
       if (e.reason === 'completed') return `${kind} · ${clock(e.seconds)}`;

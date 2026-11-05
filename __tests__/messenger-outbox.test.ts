@@ -9,9 +9,11 @@ jest.mock('../src/messenger/api', () => {
   return {
     relay: (op: string, data?: any) => mockRelay(op, data),
     uploadFile: jest.fn(),
+    cancelRemoteUpload: jest.fn(),
     withStatus,
   };
 });
+import {cancelRemoteUpload, uploadFile} from '../src/messenger/api';
 import {createMessenger} from '../src/messenger/store';
 import {backoff, transient} from '../src/messenger/outbox';
 
@@ -204,6 +206,104 @@ describe('the outgoing queue', () => {
     await jest.advanceTimersByTimeAsync(60_000);
     await flush();
     expect(sent).toHaveLength(0);
+    expect(mine(m)).toHaveLength(0);
+    m.stop();
+  });
+});
+
+describe('uploads in the queue', () => {
+  const file = {
+    uri: 'file:///x/quote.pdf',
+    name: 'quote.pdf',
+    mime: 'application/pdf',
+    size: 5_000_000,
+  };
+  const upload = uploadFile as unknown as jest.Mock<
+    (...args: any[]) => Promise<any>
+  >;
+  beforeEach(() => {
+    upload.mockReset();
+    (cancelRemoteUpload as unknown as jest.Mock).mockReset();
+  });
+
+  it("frees the server's copy of an upload the server refused", async () => {
+    const m = await open();
+    upload.mockImplementation(async (_c, _f, _p, _t, resume) => {
+      resume.onSession('up-9');
+      throw Object.assign(
+        new Error('Programs and web pages cannot be shared in chat.'),
+        {status: 400},
+      );
+    });
+    await m.sendFile('c1', file);
+    await flush();
+    expect(cancelRemoteUpload).toHaveBeenCalledWith('c1', 'up-9');
+    expect(mine(m)[0]).toMatchObject({
+      failed: true,
+      error: 'Programs and web pages cannot be shared in chat.',
+    });
+    const saved = JSON.parse(
+      (await AsyncStorage.getItem(`messenger.${ME}.outbox`)) || '[]',
+    );
+    expect(saved[0].uploadId).toBeUndefined();
+    m.stop();
+  });
+
+  it('keeps the upload id when the network drops, and continues that upload after a restart', async () => {
+    const first = await open();
+    upload.mockImplementationOnce(async (_c, _f, _p, _t, resume) => {
+      resume.onSession('up-7');
+      throw Object.assign(new Error('Upload failed. Check your network.'), {
+        status: 0,
+      });
+    });
+    await first.sendFile('c1', file);
+    await flush();
+    const saved = JSON.parse(
+      (await AsyncStorage.getItem(`messenger.${ME}.outbox`)) || '[]',
+    );
+    expect(saved[0]).toMatchObject({uploadId: 'up-7', state: 'queued'});
+    expect(cancelRemoteUpload).not.toHaveBeenCalled(); // a dropped connection isn't a refusal
+    first.stop();
+    await flush();
+
+    // The app is opened again: the same upload continues instead of starting over.
+    upload.mockImplementation(async (_c, _f, _p, _t, resume) => {
+      expect(resume.uploadId).toBe('up-7');
+      return {id: 'file-1'};
+    });
+    const second = await open();
+    await jest.advanceTimersByTimeAsync(60_000);
+    await flush();
+    expect(upload).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({name: 'quote.pdf'}),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({uploadId: 'up-7'}),
+    );
+    second.stop();
+  });
+
+  it("cancelling a message stops its upload and frees the server's copy", async () => {
+    const m = await open();
+    let cancelled = false;
+    upload.mockImplementation(
+      (_c, _f, _p, onTask, resume) =>
+        new Promise((_resolve, reject) => {
+          resume.onSession('up-5');
+          onTask(() => {
+            cancelled = true;
+            reject(Object.assign(new Error('Upload cancelled.'), {status: -1}));
+          });
+        }),
+    );
+    await m.sendFile('c1', file);
+    await flush();
+    m.discard(mine(m)[0]);
+    await flush();
+    expect(cancelled).toBe(true);
+    expect(cancelRemoteUpload).toHaveBeenCalledWith('c1', 'up-5');
     expect(mine(m)).toHaveLength(0);
     m.stop();
   });

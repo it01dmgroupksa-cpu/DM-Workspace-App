@@ -239,6 +239,13 @@ export function ChatsScreen({
             {c.pinned ? (
               <Ionicons name="pin" size={14} color={BRAND.muted} />
             ) : null}
+            {c.mentioned && c.unread ? (
+              <Text
+                style={styles.mentionBadge}
+                accessibilityLabel="Mentioned you">
+                @
+              </Text>
+            ) : null}
             {c.unread ? (
               <Text
                 style={[styles.badge, quiet && {backgroundColor: BRAND.muted}]}>
@@ -488,6 +495,18 @@ const styles = StyleSheet.create({
   name: {flex: 1, fontSize: 16.5, fontWeight: '600', color: BRAND.text},
   when: {fontSize: 12, color: BRAND.muted},
   preview: {flex: 1, fontSize: 14, color: BRAND.sub},
+  mentionBadge: {
+    minWidth: 20,
+    textAlign: 'center',
+    backgroundColor: BRAND.accent,
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
   badge: {
     minWidth: 20,
     textAlign: 'center',

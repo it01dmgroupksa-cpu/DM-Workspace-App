@@ -58,6 +58,12 @@ changed them):
 - **Files:** they upload with a progress bar and can be cancelled. A queued file is
   copied into the app's own storage, so it survives an app restart. A file that
   uploaded but whose message didn't send isn't uploaded again.
+- **Resumable uploads:** a file over 2 MB goes in 4 MB chunks (`src/messenger/upload.ts`).
+  After a dropped connection, or even an app restart, the phone asks the server how far
+  it got and sends only the rest, so a 90 MB video that lost signal at 80 MB sends 10 MB.
+  The server checks the whole file's SHA-256 and each chunk's, and a damaged chunk is
+  simply sent again. The upload's id is kept in the outgoing queue. Cancelling a message
+  also cancels the upload on the server. Files up to 2 MB still go in one request.
 - **Restarts:** unsent messages, drafts (one per chat, shown as "Draft:" in the list),
   the chat list and the latest 40 messages of the 25 busiest chats are saved on the
   phone. Chats open offline from that copy, which the server replaces as soon as it
@@ -94,6 +100,12 @@ An employee may have Messenger open on the ERP desktop and on the phone at once.
   everyone (48 hours), reactions, Arabic and English translation, message info
 - Sent, delivered and read ticks, typing, online and last seen
 - Search across all chats, and search inside a chat that jumps to the message
+- **@mentions** in groups: type `@` to pick a member (admins can pick **all**). A mention
+  shows in bold, a message that mentions you is tinted, and the chat list shows an **@**
+  until you read it. A mentioned person is notified even if they muted the chat.
+- **Pinned messages:** long-press a message → **Pin message** (5 per chat, shared by
+  everyone, admins only in a read-only group). A bar under the chat header shows the
+  pinned message; tap it to jump there, and again for the next pin.
 - The "Sent by Durar Assistant" mark and the assistant's chat
 - Voice and video calls: ringtone, answer, decline, mute, camera, switch camera,
   speaker, minimize while chatting, joining a group call under way
@@ -150,11 +162,13 @@ Pushes go from the panel through Expo's push service to Firebase (Android) and A
 
 ### 5. Panel and ERP (done by IT, once, before the app ships)
 
-- Deploy the panel update: phone push (migration 035), and the call fixes for
-  several devices.
-- Paste the updated `durar_messenger` Server Script into ERP.
+- Deploy the panel release (migrations 035 and 036: phone push, resumable uploads,
+  mentions and pins).
+- Paste the updated `durar_messenger` Server Script into ERP (it allows the device,
+  pin and pinned-list operations).
 - Paste the updated Messenger Custom HTML Block (`agent_blocks/messenger/`) into ERP.
 - Calls need the panel's LiveKit settings (`COMPOSE_PROFILES=calls`, `LIVEKIT_*`).
+- The panel's `docs/MESSENGER-ROLLOUT.md` lists every step and command.
 
 ## Build
 
@@ -226,6 +240,27 @@ B. Start typing in a chat, leave it, and kill the app. Reopen: the draft is back
 C. Airplane mode, then open the app: the chat list and recent messages show from the
    saved copy.
 D. Send a 50 MB video and cancel it halfway: nothing arrives on the other side.
+E. Send a 60 MB video, turn airplane mode on when the bar is about halfway, wait 10
+   seconds, then turn it off: the upload continues from where it stopped (the server's
+   progress doesn't go back to 0), and the video arrives intact.
+F. Start a 60 MB video upload, force-quit the app at about 40%, and reopen it: the message
+   is still waiting and continues the upload instead of starting again.
+
+### Mentions and pins (a group of A, B and C; A is an admin)
+
+M1. In the group, A types `@` and picks B: the name appears in the text. After sending, B's
+    phone shows the message tinted with the name in bold, and B's chat list shows **@**.
+M2. B and C both mute the group. A sends a message that mentions B: B still gets a
+    notification, C gets none. A plain message notifies neither.
+M3. A deletes the name from the text before sending: B is not notified.
+M4. A types `@` and picks **all**: B and C are both notified. B (not an admin) doesn't
+    see **all** in the list.
+M5. Edit a sent message to name C instead of B: C is now marked, B isn't.
+P1. B long-presses a message → **Pin message**. Everyone sees the pinned bar and a
+    "B pinned a message" line. Tapping the bar jumps to the message.
+P2. Pin five messages; the sixth says to unpin one first.
+P3. Delete a pinned message for everyone: it leaves the bar on every device.
+P4. Make the group admins-only: B can no longer pin, A can.
 
 ### Calls
 

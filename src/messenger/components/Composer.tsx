@@ -26,6 +26,13 @@ import {
 import RNBlobUtil from 'react-native-blob-util';
 import {BRAND} from '../config';
 import {clock, personOf} from '../format';
+import {
+  insertMention,
+  matchPeople,
+  mentionQuery,
+  stillMentioned,
+} from '../mentions';
+import {Avatar} from './Avatar';
 import type {Message, Person} from '../types';
 
 export type PickedFile = {
@@ -43,7 +50,10 @@ type Props = {
   people: Map<string, Person>;
   inCall: boolean;
   onCancel: () => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, mention: {users: string[]; all: boolean}) => void;
+  // Who can be @mentioned here (a group's members besides me), and whether I may @all.
+  mentionable?: Person[];
+  canMentionAll?: boolean;
   onFiles: (
     files: PickedFile[],
     voice: boolean,
@@ -91,10 +101,19 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     onTyping,
     draft = '',
     onDraft,
+    mentionable,
+    canMentionAll,
   },
   ref,
 ) {
   const [text, setText] = useState(draft);
+  // @mentions: where the cursor is, who was picked (user -> name as inserted), and a
+  // one-time cursor move after a name is inserted.
+  const [cursor, setCursor] = useState(0);
+  const [chosen, setChosen] = useState<Map<string, string>>(new Map());
+  const [forced, setForced] = useState<
+    {start: number; end: number} | undefined
+  >();
   const [menu, setMenu] = useState(false);
   const [recording, setRecording] = useState<{
     started: number;
@@ -106,7 +125,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const live = useRef(true);
 
   useEffect(() => {
-    if (editing) setText(editing.body);
+    if (editing) {
+      setText(editing.body);
+      setChosen(
+        new Map(
+          (editing.mentions || []).map(u => [u, personOf(people, u).name]),
+        ),
+      );
+    } else setChosen(new Map());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
   useEffect(() => {
     if (!recording) return;
@@ -245,12 +272,35 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   function submit() {
     const body = text.replace(/\s+$/, '');
     if (!body.trim()) return;
+    const mention = stillMentioned(body, chosen);
     if (editing) setText(draft); // an edit leaves the draft as it was
     else {
       setText('');
       onDraft?.('');
     }
-    onSend(body);
+    setChosen(new Map());
+    onSend(body, mention);
+  }
+
+  // The "@que" being typed, and the people it could mean.
+  const query =
+    mentionable?.length || canMentionAll ? mentionQuery(text, cursor) : null;
+  const suggestions = query
+    ? [
+        ...(canMentionAll && 'all'.startsWith(query.query.toLowerCase())
+          ? [{user: '@all', name: 'all'} as Person]
+          : []),
+        ...matchPeople(mentionable || [], query.query),
+      ].slice(0, 6)
+    : [];
+  function pickMention(person: Person) {
+    if (!query) return;
+    const next = insertMention(text, query.start, cursor, person.name);
+    setText(next.text);
+    onDraft?.(next.text);
+    setChosen(new Map(chosen).set(person.user, person.name));
+    setForced({start: next.cursor, end: next.cursor});
+    setCursor(next.cursor);
   }
 
   if (disabled)
@@ -262,6 +312,30 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const target = editing || replyTo;
   return (
     <View style={styles.wrap}>
+      {suggestions.length ? (
+        <View style={styles.suggest}>
+          {suggestions.map(person => (
+            <Pressable
+              key={person.user}
+              style={styles.suggestRow}
+              onPress={() => pickMention(person)}
+              accessibilityLabel={`Mention ${person.name}`}>
+              {person.user === '@all' ? (
+                <View style={styles.allBadge}>
+                  <Ionicons name="people" size={16} color="#fff" />
+                </View>
+              ) : (
+                <Avatar person={person} size={30} />
+              )}
+              <Text style={styles.suggestName} numberOfLines={1}>
+                {person.user === '@all'
+                  ? 'all  ·  notify everyone'
+                  : person.name}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       {target ? (
         <View style={styles.replying}>
           <View style={{flex: 1}}>
@@ -312,6 +386,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             <TextInput
               style={styles.input}
               value={text}
+              selection={forced}
+              onSelectionChange={e => {
+                setCursor(e.nativeEvent.selection.start);
+                if (forced) setForced(undefined);
+              }}
               onChangeText={value => {
                 setText(value);
                 if (!editing) onDraft?.(value);
@@ -382,6 +461,31 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   );
 });
 const styles = StyleSheet.create({
+  suggest: {
+    backgroundColor: '#fff',
+    marginHorizontal: 8,
+    marginTop: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BRAND.line,
+    overflow: 'hidden',
+  },
+  suggestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  suggestName: {flex: 1, color: BRAND.text, fontSize: 15},
+  allBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: BRAND.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   wrap: {backgroundColor: '#f0f2f5', paddingBottom: 6},
   row: {
     flexDirection: 'row',

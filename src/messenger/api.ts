@@ -1,5 +1,12 @@
 import RNBlobUtil from 'react-native-blob-util';
 import {currentSession, erpCall, sessionEnded} from './session';
+import {withStatus} from './errors';
+import {
+  abandonUpload,
+  resumableUpload,
+  SINGLE_REQUEST_BYTES,
+  singleUpload,
+} from './upload';
 
 // One call to the durar_messenger Server Script, as Messenger's own ERP session
 // (session.tsx). The script proves who the employee is.
@@ -28,54 +35,49 @@ export async function relay<T = any>(
     throw withStatus(error.message, error.status);
   }
 }
-// The status lets the outgoing queue tell "offline, retry" from "refused".
-export function withStatus(message: string, status: number) {
-  const error: Error & {status?: number} = new Error(message);
-  error.status = status;
-  return error;
-}
+export {withStatus};
 
-// Files go straight to the panel with a one-chat upload ticket; the body is the raw file.
-// `onProgress` gets 0–1; `onTask` gets a cancel function for the upload in flight.
+// Files go to the panel with a one-chat upload ticket. Small files go in one request;
+// bigger ones in resumable chunks, so a dropped connection costs only the last chunk
+// (see upload.ts). `onProgress` gets 0-1, `onTask` a function that cancels the upload,
+// and `uploadId` / `onSession` carry a half-done upload across an app restart.
 export async function uploadFile(
   conversationId: string,
-  file: {uri: string; name: string; mime: string},
+  file: {uri: string; name: string; mime: string; size?: number},
   onProgress?: (fraction: number) => void,
   onTask?: (cancel: () => void) => void,
+  resume?: {uploadId?: string; onSession?: (id: string) => void},
 ) {
-  const ticket = await relay<{url: string; maxBytes: number}>('files.ticket', {
-    conversationId,
-  });
-  const path = decodeURIComponent(file.uri.replace(/^file:\/\//, ''));
-  let response;
+  const ticketUrl = async () =>
+    (
+      await relay<{url: string; maxBytes: number}>('files.ticket', {
+        conversationId,
+      })
+    ).url;
+  const hooks = {onProgress, onTask, ...resume};
+  const size =
+    Number(
+      (
+        await RNBlobUtil.fs
+          .stat(plainPath(file.uri))
+          .catch(() => ({size: file.size || 0}))
+      ).size,
+    ) || 0;
+  if (size && size <= SINGLE_REQUEST_BYTES && !resume?.uploadId)
+    return singleUpload(await ticketUrl(), file, hooks);
+  return resumableUpload(ticketUrl, file, hooks);
+}
+const plainPath = (uri: string) =>
+  decodeURIComponent(uri.replace(/^file:\/\//, ''));
+// Cancel a half-done upload so the server frees its space.
+export async function cancelRemoteUpload(
+  conversationId: string,
+  uploadId: string,
+) {
   try {
-    const task = RNBlobUtil.fetch(
-      'POST',
-      ticket.url,
-      {
-        'Content-Type': file.mime || 'application/octet-stream',
-        'X-File-Name': encodeURIComponent(file.name || 'file'),
-      },
-      RNBlobUtil.wrap(path),
-    );
-    onTask?.(() => task.cancel());
-    if (onProgress)
-      task.uploadProgress({interval: 250}, (sent, total) =>
-        onProgress(Number(total) > 0 ? Number(sent) / Number(total) : 0),
-      );
-    response = await task;
-  } catch (error: any) {
-    if (/cancel/i.test(String(error?.message)))
-      throw withStatus('Upload cancelled.', -1);
-    throw withStatus('Upload failed. Check your network.', 0);
-  }
-  let json: any = {};
-  try {
-    json = response.json();
+    const {url} = await relay<{url: string}>('files.ticket', {conversationId});
+    await abandonUpload(url, uploadId);
   } catch {
-    /* not JSON */
+    /* the server sweeps it after a day */
   }
-  const status = response.info().status;
-  if (status >= 400) throw withStatus(json?.error || 'Upload failed.', status);
-  return json.file as {id: string};
 }

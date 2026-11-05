@@ -38,6 +38,9 @@ export type Message = {
     deleted?: boolean;
   } | null;
   reactions: {user: string; emoji: string}[];
+  // Employees named with @, and whether it was "@all" (group admins only).
+  mentions?: string[];
+  mentionAll?: boolean;
   translation?: {lang: 'ar' | 'en'; body: string} | null;
   // Only on this phone, until the panel confirms.
   pending?: boolean;
@@ -64,6 +67,8 @@ export type Conversation = {
   archived: boolean;
   mutedUntil?: string | null;
   unread: number;
+  // Someone @mentioned me in what I haven't read yet.
+  mentioned?: boolean;
   memberCount: number;
   othersReadAt?: string | null;
   othersDeliveredAt?: string | null;

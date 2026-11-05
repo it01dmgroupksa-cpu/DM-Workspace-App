@@ -10,7 +10,7 @@ import React, {
 import {AppState} from 'react-native';
 import EventSource from 'react-native-sse';
 import NetInfo from '@react-native-community/netinfo';
-import {relay, uploadFile, withStatus} from './api';
+import {cancelRemoteUpload, relay, uploadFile, withStatus} from './api';
 import {uid} from './format';
 import {
   backoff,
@@ -189,6 +189,7 @@ export function createMessenger(me: string, render: () => void) {
         (c.last.id !== m.id && new Date(m.createdAt) >= new Date(c.last.at)));
     // While older history is on screen, a new message waits for "jump to latest".
     if (known || !th.newer) upsert(m);
+    refreshPinned(m);
     if (
       !c.last ||
       new Date(m.createdAt) >= new Date(c.last.at) ||
@@ -213,6 +214,7 @@ export function createMessenger(me: string, render: () => void) {
       if (looking) markRead(c.id);
       else {
         c.unread = (c.unread || 0) + 1;
+        if (m.mentionAll || m.mentions?.includes(me)) c.mentioned = true;
         delivered();
       }
       c.archived = false;
@@ -244,7 +246,10 @@ export function createMessenger(me: string, render: () => void) {
     const c = convs.get(conversationId);
     if (!c) return;
     if (user === me) {
-      if (new Date(readAt) >= new Date(c.last?.at || 0)) c.unread = 0;
+      if (new Date(readAt) >= new Date(c.last?.at || 0)) {
+        c.unread = 0;
+        c.mentioned = false;
+      }
     } else if (c.kind === 'direct') {
       c.othersReadAt = readAt;
       c.othersDeliveredAt = deliveredAt;
@@ -263,6 +268,8 @@ export function createMessenger(me: string, render: () => void) {
         conversationId: id,
       });
       mergeConv(conversation);
+      members.delete(id); // membership may have changed
+      if (id === state.active) loadPins(id);
       bump();
     } catch {
       /* the next refresh catches up */
@@ -281,6 +288,7 @@ export function createMessenger(me: string, render: () => void) {
     const c = convs.get(id);
     if (!c || !state.foreground || thread(id).newer) return;
     c.unread = 0;
+    c.mentioned = false;
     if (readTimer) clearTimeout(readTimer);
     readTimer = setTimeout(
       () => relay('messages.read', {conversationId: id}).catch(() => {}),
@@ -405,6 +413,7 @@ export function createMessenger(me: string, render: () => void) {
       for (const [id, th] of threads) if (id !== state.active) th.stale = true;
       if (state.active && convs.get(state.active)?.last?.id !== before)
         await loadMessages(state.active);
+      if (state.active) loadPins(state.active);
       if (state.limits.callsEnabled) {
         const asked = Date.now();
         const {calls} = await relay<{calls: Call[]}>('calls.live');
@@ -620,6 +629,8 @@ export function createMessenger(me: string, render: () => void) {
           : 'file'
         : 'text',
       body: item.body,
+      mentions: item.mentions,
+      mentionAll: item.mentionAll,
       createdAt: item.createdAt,
       reply: item.replyTo || null,
       file: f ? {name: f.name, size: f.size, mime: f.mime} : null,
@@ -673,6 +684,11 @@ export function createMessenger(me: string, render: () => void) {
             }, backoff(item.attempts));
             return;
           }
+          // A refused upload can't continue: free its space on the server.
+          if (item.uploadId && !item.fileId) {
+            cancelRemoteUpload(item.conversationId, item.uploadId);
+            item.uploadId = undefined;
+          }
           item.state = 'failed';
           item.error = error.message;
           saveQueue();
@@ -700,14 +716,25 @@ export function createMessenger(me: string, render: () => void) {
           }
         },
         cancel => cancels.set(item.clientId, cancel),
+        {
+          uploadId: item.uploadId,
+          // Kept with the queue, so even an app restart continues this upload.
+          onSession: id => {
+            item.uploadId = id;
+            saveQueue();
+          },
+        },
       ).finally(() => cancels.delete(item.clientId));
       item.fileId = uploaded.id; // a later retry only sends the message
+      item.uploadId = undefined;
       saveQueue();
     }
     const {message} = await relay('messages.send', {
       conversationId: item.conversationId,
       clientId: item.clientId,
       body: item.body,
+      ...(item.mentions?.length ? {mentions: item.mentions} : {}),
+      ...(item.mentionAll ? {mentionAll: true} : {}),
       ...(item.replyTo ? {replyTo: item.replyTo.id} : {}),
       ...(item.fileId ? {fileId: item.fileId, voice: !!item.file?.voice} : {}),
     });
@@ -717,6 +744,7 @@ export function createMessenger(me: string, render: () => void) {
     conversationId: string,
     body: string,
     replyTo?: Message | null,
+    mention?: {users: string[]; all: boolean},
   ) {
     if (body.length > state.limits.body)
       throw withStatus(
@@ -728,6 +756,8 @@ export function createMessenger(me: string, render: () => void) {
       conversationId,
       createdAt: new Date().toISOString(),
       body,
+      mentions: mention?.users,
+      mentionAll: mention?.all,
       replyTo: replyTo
         ? {
             id: replyTo.id,
@@ -781,6 +811,8 @@ export function createMessenger(me: string, render: () => void) {
     if (item) {
       outbox = outbox.filter(i => i !== item);
       cancels.get(item.clientId)?.();
+      if (item.uploadId && !item.fileId)
+        cancelRemoteUpload(item.conversationId, item.uploadId);
       saveQueue();
       dropFile(item);
     }
@@ -799,11 +831,20 @@ export function createMessenger(me: string, render: () => void) {
     draftTimer = setTimeout(() => saveDrafts(me, drafts), 600);
     render();
   }
-  async function edit(m: Message, body: string) {
-    upsert({...m, body, editedAt: new Date().toISOString()});
+  async function edit(m: Message, body: string, mentions?: string[]) {
+    upsert({
+      ...m,
+      body,
+      ...(mentions ? {mentions} : {}),
+      editedAt: new Date().toISOString(),
+    });
     bump();
     try {
-      await relay('messages.edit', {messageId: m.id, body});
+      await relay('messages.edit', {
+        messageId: m.id,
+        body,
+        ...(mentions ? {mentions} : {}),
+      });
     } catch (error) {
       loadMessages(m.conversationId);
       throw error;
@@ -818,6 +859,7 @@ export function createMessenger(me: string, render: () => void) {
       hidden.add(m.id);
       th.list = th.list.filter(x => x.id !== m.id);
     }
+    refreshPinned({...m, deleted: true}); // gone from the pinned list too
     bump();
   }
   async function react(m: Message, emoji: string) {
@@ -846,6 +888,62 @@ export function createMessenger(me: string, render: () => void) {
     const current = thread(m.conversationId).list.find(x => x.id === m.id);
     if (current) upsert({...current, translation});
     bump();
+  }
+  // ---------- pinned messages and group members ----------
+  const pins = new Map<string, Message[]>();
+  const members = new Map<string, string[]>();
+  // Answers can arrive out of order after quick pin changes; only the newest counts.
+  const pinTickets = new Map<string, number>();
+  const nextPinTicket = (id: string) => {
+    const n = (pinTickets.get(id) || 0) + 1;
+    pinTickets.set(id, n);
+    return n;
+  };
+  async function loadPins(id: string) {
+    const ticket = nextPinTicket(id);
+    try {
+      const result = await relay<{pins: Message[]}>('messages.pins', {
+        conversationId: id,
+      });
+      if (pinTickets.get(id) !== ticket) return;
+      pins.set(id, result.pins);
+      bump();
+    } catch {
+      /* the last list stays */
+    }
+  }
+  async function pin(m: Message, pinned: boolean) {
+    const ticket = nextPinTicket(m.conversationId);
+    const result = await relay<{pins: Message[]}>('messages.pin', {
+      messageId: m.id,
+      pinned,
+    });
+    if (pinTickets.get(m.conversationId) !== ticket) return;
+    pins.set(m.conversationId, result.pins);
+    bump();
+  }
+  // A pinned message that was edited, deleted or hidden updates in the list.
+  function refreshPinned(m: Message) {
+    const list = pins.get(m.conversationId);
+    if (!list?.some(p => p.id === m.id)) return;
+    pins.set(
+      m.conversationId,
+      m.deleted
+        ? list.filter(p => p.id !== m.id)
+        : list.map(p => (p.id === m.id ? {...p, ...m} : p)),
+    );
+  }
+  async function membersOf(id: string) {
+    const known = members.get(id);
+    if (known) return known;
+    const result = await relay<{
+      members: {user: string}[];
+      people: Record<string, Person>;
+    }>('conversations.members', {conversationId: id});
+    mergePeople(result.people);
+    const list = result.members.map(x => x.user);
+    members.set(id, list);
+    return list;
   }
   async function openDirect(user: string) {
     const existing = [...convs.values()].find(
@@ -944,6 +1042,10 @@ export function createMessenger(me: string, render: () => void) {
     people,
     convs,
     threads,
+    pins,
+    loadPins,
+    pin,
+    membersOf,
     typing,
     liveCalls,
     state,
@@ -975,7 +1077,10 @@ export function createMessenger(me: string, render: () => void) {
     refreshPresence,
     setActive(id: string | null) {
       state.active = id;
-      if (id) markRead(id);
+      if (id) {
+        markRead(id);
+        loadPins(id);
+      }
     },
     setNearBottom(value: boolean) {
       state.nearBottom = value;
@@ -987,6 +1092,8 @@ export function createMessenger(me: string, render: () => void) {
       };
     },
     onCall,
+    // A message arriving from the live stream (also how tests deliver one).
+    receive: onMessage,
     me,
   };
 }

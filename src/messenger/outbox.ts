@@ -13,6 +13,8 @@ export type OutItem = {
   conversationId: string;
   createdAt: string;
   body: string;
+  mentions?: string[];
+  mentionAll?: boolean;
   replyTo?: {id: string; sender: string; body?: string; file?: string} | null;
   file?: {
     uri: string;
@@ -22,6 +24,7 @@ export type OutItem = {
     voice: boolean;
   };
   fileId?: string; // uploaded already: a retry only sends the message
+  uploadId?: string; // a resumable upload in progress: a retry or restart continues it
   state: 'queued' | 'failed';
   error?: string;
   attempts: number;
