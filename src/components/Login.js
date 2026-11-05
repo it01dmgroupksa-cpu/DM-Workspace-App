@@ -109,14 +109,14 @@ const handleLogin = async () => {
 
 
   const handleContactSupport = () => {
-    const email = 'rihal@dmgroupksa.com';
+    const email = 'itadmin@dmgroupksa.com';
     const subject = 'Issue Signing Into DM Workspace App';
     const mailtoURL = `mailto:${email}?subject=${encodeURIComponent(subject)}`;
 
     Linking.openURL(mailtoURL).catch(err =>
       Alert.alert(
         'Error',
-        'Failed to open email client. Please manually send an email to rihal@dmgroupksa.com',
+        'Failed to open email client. Please manually send an email to itadmin@dmgroupksa.com',
       ),
     );
   };
