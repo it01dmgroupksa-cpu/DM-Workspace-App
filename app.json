@@ -3,6 +3,12 @@
   "plugins": [
     "expo-audio",
     "expo-video",
-    "expo-secure-store"
-  ]
+    "expo-secure-store",
+    "expo-asset"
+  ],
+  "extra": {
+    "eas": {
+      "projectId": "bef26b8d-0729-4c34-8d35-77629adcce48"
+    }
+  }
 }
