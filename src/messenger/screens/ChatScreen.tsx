@@ -5,7 +5,6 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -486,6 +485,7 @@ export function ChatScreen({
               person={peer}
               group={c.kind === 'group'}
               groupId={c.id}
+              image={c.image}
               size={38}
             />
             <View style={{flex: 1}}>
@@ -573,7 +573,7 @@ export function ChatScreen({
       ) : null}
       <KeyboardAvoidingView
         style={{flex: 1}}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior="padding">
         <View style={styles.chat}>
           {!th.loaded && th.loading ? (
             <ActivityIndicator style={{marginTop: 30}} color={BRAND.navy} />

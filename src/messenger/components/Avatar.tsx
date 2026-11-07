@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {Image, StyleSheet, Text, View} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
 import {ASSISTANT, BRAND, ERP_ORIGIN} from '../config';
@@ -10,13 +10,18 @@ export function Avatar({
   group,
   size = 46,
   groupId,
+  image: groupImage,
 }: {
   person?: Person;
   group?: boolean;
   size?: number;
   groupId?: string;
+  // The group's own picture, when it has one.
+  image?: string | null;
 }) {
   const [broken, setBroken] = useState(false);
+  // A fresh link for the same group (or a new picture) deserves another try.
+  useEffect(() => setBroken(false), [groupImage]);
   const box = {width: size, height: size, borderRadius: size / 2};
   if (group)
     return (
@@ -27,6 +32,13 @@ export function Avatar({
           {backgroundColor: `hsl(${hue(groupId || '')}, 45%, 46%)`},
         ]}>
         <Ionicons name="people" size={size * 0.5} color="#fff" />
+        {groupImage && !broken ? (
+          <Image
+            source={{uri: groupImage}}
+            style={[StyleSheet.absoluteFill, box]}
+            onError={() => setBroken(true)}
+          />
+        ) : null}
       </View>
     );
   if (person?.user === ASSISTANT)

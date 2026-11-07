@@ -67,6 +67,18 @@ export async function uploadFile(
     return singleUpload(await ticketUrl(), file, hooks);
   return resumableUpload(ticketUrl, file, hooks);
 }
+// A group's picture: a small image, uploaded like any chat file but on an "avatar"
+// ticket, so a member can set it even where only admins may post messages.
+export async function uploadGroupImage(
+  conversationId: string,
+  file: {uri: string; name: string; mime: string},
+) {
+  const {url} = await relay<{url: string}>('files.ticket', {
+    conversationId,
+    avatar: true,
+  });
+  return singleUpload(url, file, {});
+}
 const plainPath = (uri: string) =>
   decodeURIComponent(uri.replace(/^file:\/\//, ''));
 // Cancel a half-done upload so the server frees its space.

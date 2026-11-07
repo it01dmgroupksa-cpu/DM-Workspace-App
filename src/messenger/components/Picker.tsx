@@ -116,6 +116,7 @@ export function Picker({
               person={item.person}
               group={item.conv?.kind === 'group'}
               groupId={item.conv?.id}
+              image={item.conv?.image}
               size={42}
             />
             <View style={{flex: 1}}>

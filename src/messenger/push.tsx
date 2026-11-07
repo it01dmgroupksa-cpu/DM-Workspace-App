@@ -1,5 +1,5 @@
 import {useEffect, useRef} from 'react';
-import {AppState, Platform} from 'react-native';
+import {AppState, Linking, Platform} from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -104,6 +104,68 @@ export async function unregisterPush() {
 
 onBeforeSignOut(unregisterPush);
 
+type JoinCall = (call: Call, video: boolean, answer: boolean) => unknown;
+
+// Answer or decline a ringing call from a notification button. Returns true when that
+// settled it; false means "just open the chat" (already answered elsewhere, or over).
+async function respondToCall(
+  me: string,
+  join: JoinCall,
+  data: any,
+  action: 'answer' | 'decline',
+): Promise<boolean> {
+  const {calls: live} = await relay<{calls: Call[]}>('calls.live').catch(() => ({
+    calls: [] as Call[],
+  }));
+  const call = live.find(x => x.id === data.callId);
+  const mine = call?.members.find(m => m.user === me)?.state;
+  dismissCallNotifications(data.callId);
+  // Still ringing for me: answer or decline it here. Already answered on another
+  // device, or over: just open the chat, never take the call over by accident.
+  if (call && mine === 'ringing') {
+    if (action === 'decline') {
+      await relay('calls.decline', {callId: call.id}).catch(() => {});
+      return true;
+    }
+    join(call, !!data.video, true);
+    return true;
+  }
+  return action === 'decline';
+}
+
+// The Android call alert opens the app on dmworkspace://call?action=...&callId=...
+function parseCallLink(url: string | null) {
+  const m = url && /^dmworkspace:\/\/call\?(.*)$/.exec(url);
+  if (!m) return null;
+  const q: Record<string, string> = {};
+  m[1].split('&').forEach(pair => {
+    const [k, v = ''] = pair.split('=');
+    try {
+      q[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, ' '));
+    } catch {}
+  });
+  if (!q.callId || !q.conversationId) return null;
+  return {
+    action: q.action,
+    data: {
+      type: 'call',
+      callId: q.callId,
+      conversationId: q.conversationId,
+      video: q.video === '1',
+    },
+  };
+}
+
+// Opening the chat; a call still ringing shows its screen from the live calls.
+function openCallChat(messenger: Messenger, data: any) {
+  const tryOpen = (left: number) => {
+    if (!openChat(data.conversationId) && left > 0)
+      setTimeout(() => tryOpen(left - 1), 300);
+  };
+  tryOpen(20); // the splash screen shows for 3 seconds
+  if (data.type === 'call') messenger.resync();
+}
+
 export function PushBridge() {
   const {messenger} = useMessenger();
   const calls = useCalls();
@@ -143,33 +205,40 @@ export function PushBridge() {
         (response.actionIdentifier === 'answer' ||
           response.actionIdentifier === 'decline')
       ) {
-        const {calls: live} = await relay<{calls: Call[]}>('calls.live').catch(
-          () => ({calls: [] as Call[]}),
+        const settled = await respondToCall(
+          messenger.me,
+          (c, v, a) => callsRef.current.join(c, v, a),
+          data,
+          response.actionIdentifier,
         );
-        const call = live.find(x => x.id === data.callId);
-        const mine = call?.members.find(m => m.user === messenger.me)?.state;
-        dismissCallNotifications(data.callId);
-        // Still ringing for me: answer or decline it here. Already answered on another
-        // device, or over: just open the chat, never take the call over by accident.
-        if (call && mine === 'ringing') {
-          if (response.actionIdentifier === 'decline')
-            return void relay('calls.decline', {callId: call.id}).catch(
-              () => {},
-            );
-          return callsRef.current.join(call, !!data.video, true);
-        }
-        if (response.actionIdentifier === 'decline') return;
+        if (settled) return;
       }
-      // Opening the chat; a call still ringing shows its screen from the live calls.
-      const tryOpen = (left: number) => {
-        if (!openChat(data.conversationId) && left > 0)
-          setTimeout(() => tryOpen(left - 1), 300);
-      };
-      tryOpen(20); // the splash screen shows for 3 seconds
-      if (data.type === 'call') messenger.resync();
+      openCallChat(messenger, data);
     }
     Notifications.getLastNotificationResponseAsync().then(handle);
     const sub = Notifications.addNotificationResponseReceivedListener(handle);
+    return () => sub.remove();
+  }, [messenger]);
+
+  // Android: the call alert's tap, Answer and Decline arrive as a dmworkspace://call link.
+  useEffect(() => {
+    async function onLink(url: string | null) {
+      const link = parseCallLink(url);
+      if (!link || !url || handled.has(url)) return;
+      handled.add(url);
+      if (link.action === 'answer' || link.action === 'decline') {
+        const settled = await respondToCall(
+          messenger.me,
+          (c, v, a) => callsRef.current.join(c, v, a),
+          link.data,
+          link.action,
+        );
+        if (settled) return;
+      }
+      openCallChat(messenger, link.data);
+    }
+    Linking.getInitialURL().then(onLink, () => {});
+    const sub = Linking.addEventListener('url', ({url}) => void onLink(url));
     return () => sub.remove();
   }, [messenger]);
   return null;

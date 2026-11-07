@@ -193,7 +193,12 @@ export function ChatsScreen({
         onPress={() => navigation.navigate('Chat', {id: c.id})}
         onLongPress={() => setMenuFor(c)}>
         <View>
-          <Avatar person={peer} group={c.kind === 'group'} groupId={c.id} />
+          <Avatar
+            person={peer}
+            group={c.kind === 'group'}
+            groupId={c.id}
+            image={c.image}
+          />
           {c.kind === 'direct' && online(peer) ? (
             <View style={styles.dot} />
           ) : null}

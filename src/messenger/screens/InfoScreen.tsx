@@ -14,7 +14,8 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
 import {useFocusEffect} from '@react-navigation/native';
 import type {StackScreenProps} from '@react-navigation/stack';
-import {relay} from '../api';
+import * as ImagePicker from 'expo-image-picker';
+import {relay, uploadGroupImage} from '../api';
 import {ASSISTANT, BRAND} from '../config';
 import {convTitle, lastSeen, muted, personOf} from '../format';
 import {useMessenger} from '../store';
@@ -38,6 +39,7 @@ export function InfoScreen({
   const [title, setTitle] = useState(c?.title || '');
   const [description, setDescription] = useState(c?.description || '');
   const [memberMenu, setMemberMenu] = useState<Member | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   const load = useCallback(() => {
     if (c?.kind !== 'group') return;
@@ -71,6 +73,55 @@ export function InfoScreen({
     messenger
       .settings(id, data)
       .catch(error => Alert.alert('Messenger', error.message));
+
+  // Any member can change the group's picture, not only admins.
+  async function choosePhoto() {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (result.canceled) return;
+      const a = result.assets[0];
+      setPhotoBusy(true);
+      const file = await uploadGroupImage(id, {
+        uri: a.uri,
+        name: a.fileName || `group-${Date.now()}.jpg`,
+        mime: a.mimeType || 'image/jpeg',
+      });
+      await messenger.groupAction('groups.image', {
+        conversationId: id,
+        fileId: file.id,
+      });
+    } catch (error: any) {
+      Alert.alert('Group picture', error?.message || 'The picture could not be set.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+  function photoMenu() {
+    Alert.alert('Group picture', undefined, [
+      {text: 'Choose from gallery', onPress: choosePhoto},
+      ...(c?.image
+        ? [
+            {
+              text: 'Remove picture',
+              style: 'destructive' as const,
+              onPress: () =>
+                messenger
+                  .groupAction('groups.image', {
+                    conversationId: id,
+                    fileId: null,
+                  })
+                  .catch(error => Alert.alert('Messenger', error.message)),
+            },
+          ]
+        : []),
+      {text: 'Cancel', style: 'cancel' as const},
+    ]);
+  }
 
   function memberItems(m: Member): SheetItem[] {
     const name = personOf(messenger.people, m.user).name;
@@ -129,12 +180,34 @@ export function InfoScreen({
         contentContainerStyle={{paddingBottom: 40}}
         keyboardShouldPersistTaps="handled">
         <View style={styles.profile}>
-          <Avatar
-            person={peer}
-            group={c.kind === 'group'}
-            groupId={c.id}
-            size={96}
-          />
+          {c.kind === 'group' && !c.left ? (
+            <Pressable
+              onPress={photoMenu}
+              disabled={photoBusy}
+              accessibilityLabel="Change group picture">
+              <Avatar
+                group
+                groupId={c.id}
+                image={c.image}
+                size={96}
+              />
+              <View style={styles.camera}>
+                {photoBusy ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="camera" size={16} color="#fff" />
+                )}
+              </View>
+            </Pressable>
+          ) : (
+            <Avatar
+              person={peer}
+              group={c.kind === 'group'}
+              groupId={c.id}
+              image={c.image}
+              size={96}
+            />
+          )}
           {admin ? (
             <TextInput
               style={styles.titleEdit}
@@ -330,6 +403,19 @@ const styles = StyleSheet.create({
   },
   heading: {color: '#fff', fontSize: 18, fontWeight: '700'},
   body: {flex: 1, backgroundColor: BRAND.bg},
+  camera: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: BRAND.navy,
+    borderWidth: 2,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   profile: {
     alignItems: 'center',
     backgroundColor: '#fff',

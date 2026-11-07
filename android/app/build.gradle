@@ -171,6 +171,8 @@ dependencies {
     // only declares it as `implementation`, which is not visible here). Keep this version
     // in step with node_modules/expo-notifications/android/build.gradle.
     implementation("com.google.firebase:firebase-messaging:25.0.1")
+    // NotificationCompat.CallStyle (the Answer/Decline call alert); same version expo-notifications uses.
+    implementation("androidx.core:core:1.17.0")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true"
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true"

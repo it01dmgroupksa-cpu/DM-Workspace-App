@@ -63,6 +63,8 @@ export type Conversation = {
   role: 'admin' | 'member';
   left?: boolean;
   onlyAdminsSend?: boolean;
+  // A group's picture: a signed link to one of the chat's own images.
+  image?: string | null;
   pinned: boolean;
   archived: boolean;
   mutedUntil?: string | null;
