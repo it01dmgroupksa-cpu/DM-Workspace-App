@@ -1,6 +1,9 @@
 package com.dmworkspaceapp
 
 import android.app.NotificationManager
+import android.app.PictureInPictureParams
+import android.content.res.Configuration
+import android.util.Rational
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -62,8 +65,38 @@ class MainActivity : ReactActivity() {
       .cancel(CallMessagingService.ID)
   }
 
+  // Video calls: leaving the app (Home, another app) shrinks the call into a floating
+  // window instead of hiding it. The call screen turns this on only during a video call.
+  fun updatePip() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    try {
+      setPictureInPictureParams(pipParams().setAutoEnterEnabled(pipWanted).build())
+    } catch (e: Exception) {
+    }
+  }
+
+  private fun pipParams() = PictureInPictureParams.Builder().setAspectRatio(Rational(9, 16))
+
+  override fun onUserLeaveHint() {
+    super.onUserLeaveHint()
+    // Android 12+ enters by itself (auto-enter); older versions are asked here.
+    if (!pipWanted || Build.VERSION.SDK_INT < Build.VERSION_CODES.O || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
+    try {
+      enterPictureInPictureMode(pipParams().build())
+    } catch (e: Exception) {
+    }
+  }
+
+  override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+    super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+    DmCallsModule.emit("DmCallsPip", if (isInPictureInPictureMode) "1" else "0")
+  }
+
   companion object {
     const val EXTRA_CALL = "dm_call"
+
+    @Volatile
+    var pipWanted = false
   }
 
   override fun getMainComponentName(): String = "main"

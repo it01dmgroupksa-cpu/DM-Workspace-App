@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioManager
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
@@ -35,7 +34,14 @@ class CallMessagingService : ExpoFirebaseMessagingService() {
     // nothing to show, so it never goes to Expo (which would try to display it).
     if (body.optString("type") == "call-cancel") {
       (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(ID)
+      CallTelecom.cancelRinging(body.optString("callId"), android.telecom.DisconnectCause.REMOTE)
       return
+    }
+    // Missed: stop the ring, then let Expo show "Missed call from X" like any message.
+    if (body.optString("type") == "missed-call") {
+      (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(ID)
+      CallTelecom.cancelRinging(body.optString("callId"), android.telecom.DisconnectCause.MISSED)
+      return super.onMessageReceived(remoteMessage)
     }
     if (body.optString("type") != "call" || isAppInForeground()) {
       return super.onMessageReceived(remoteMessage)
@@ -57,31 +63,6 @@ class CallMessagingService : ExpoFirebaseMessagingService() {
     val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
     val me = am.runningAppProcesses?.firstOrNull { it.pid == android.os.Process.myPid() }
     return me?.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
-  }
-
-  // The app opens on a dmworkspace://call link; the JavaScript side reads it with Linking
-  // and answers, declines or shows the call. `action` is open, answer or decline.
-  private fun callIntent(kind: String, code: Int, callId: String, conversationId: String, video: Boolean): PendingIntent {
-    val link = Uri.Builder()
-      .scheme("dmworkspace")
-      .authority("call")
-      .appendQueryParameter("action", kind)
-      .appendQueryParameter("callId", callId)
-      .appendQueryParameter("conversationId", conversationId)
-      .appendQueryParameter("video", if (video) "1" else "0")
-      .appendQueryParameter("t", System.currentTimeMillis().toString())
-      .build()
-    val open = Intent(this, MainActivity::class.java).apply {
-      // React Native only reports an intent's link to JavaScript (Linking) when the
-      // action is VIEW; without it Answer, Decline and the tap would all be ignored.
-      action = Intent.ACTION_VIEW
-      data = link
-      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-      putExtra(MainActivity.EXTRA_CALL, true)
-    }
-    return PendingIntent.getActivity(
-      this, code, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
   }
 
   private fun ensureChannel(nm: NotificationManager) {
@@ -107,9 +88,9 @@ class CallMessagingService : ExpoFirebaseMessagingService() {
   private fun showIncomingCall(title: String, text: String, callId: String, conversationId: String, video: Boolean) {
     val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     ensureChannel(nm)
-    val open = callIntent("open", 1, callId, conversationId, video)
-    val answer = callIntent("answer", 2, callId, conversationId, video)
-    val decline = callIntent("decline", 3, callId, conversationId, video)
+    val open = CallLinks.pending(this, "open", 1, callId, conversationId, video)
+    val answer = CallLinks.pending(this, "answer", 2, callId, conversationId, video)
+    val decline = CallLinks.pending(this, "decline", 3, callId, conversationId, video)
     val caller = Person.Builder().setName(title).setImportant(true).build()
     val n = NotificationCompat.Builder(this, CHANNEL)
       .setSmallIcon(R.drawable.ic_notification)
@@ -130,6 +111,7 @@ class CallMessagingService : ExpoFirebaseMessagingService() {
       .build()
     n.flags = n.flags or Notification.FLAG_INSISTENT // keep ringing until answered
     nm.notify(ID, n)
+    CallTelecom.ringing(this, callId, conversationId, title, video)
   }
 
   companion object {

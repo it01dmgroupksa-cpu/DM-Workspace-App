@@ -21,7 +21,8 @@ class MainApplication : Application(), ReactApplication {
   override val reactHost: ReactHost by lazy {
     ExpoReactHostFactory.getDefaultReactHost(
       context = applicationContext,
-      packageList = PackageList(this).packages,
+      // DmCallsPackage: the call screen's native side (ongoing call, Telecom, PiP).
+      packageList = PackageList(this).packages.apply { add(DmCallsPackage()) },
     )
   }
 

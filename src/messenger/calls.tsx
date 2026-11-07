@@ -43,6 +43,9 @@ import {BRAND, RING_SECONDS} from './config';
 import {clock, convTitle, personOf} from './format';
 import {useMaybeMessenger} from './store';
 import {dismissCallNotifications} from './notify';
+import {nativeCalls, onNativeHangUp, usePictureInPicture} from './nativeCalls';
+import {callKit} from './callKit';
+import {thisDevice} from './device';
 import type {Call} from './types';
 import {Avatar} from './components/Avatar';
 
@@ -57,6 +60,8 @@ type Session = {
   token?: string;
   answeredAt?: number;
   minimized?: boolean;
+  // Someone else started it (Android's Telecom needs the direction).
+  incoming?: boolean;
 };
 type CallsApi = {
   start: (conversationId: string, video: boolean) => void;
@@ -157,12 +162,16 @@ export function CallProvider({children}: {children: React.ReactNode}) {
       Vibration.cancel();
       ring(false);
       set(null);
-      if (current.call) dismissCallNotifications(current.call.id);
+      if (current.call) {
+        dismissCallNotifications(current.call.id);
+        nativeCalls.ended(current.call.id);
+      }
       if (operation && current.call)
         relay(operation, {
           callId: current.call.id,
           // The server checks whether the employee carries on from another device.
           ...(dropped ? {dropped: true} : {}),
+          devices: thisDevice.tokens(),
         }).catch(() => {});
       if (note) Alert.alert('Call', note);
     },
@@ -222,12 +231,14 @@ export function CallProvider({children}: {children: React.ReactNode}) {
         conversationId: call.conversationId,
         mode: 'connecting',
         video,
+        incoming: call.startedBy !== me,
       });
       try {
         await permissions(video);
         const result = await relay('calls.join', {
           callId: call.id,
           ...(answer ? {answer: true} : {}),
+          devices: thisDevice.tokens(),
         });
         if (now()?.key !== key)
           return relay('calls.leave', {callId: call.id}).catch(() => {});
@@ -237,7 +248,7 @@ export function CallProvider({children}: {children: React.ReactNode}) {
           finish(error.message || "Couldn't join the call.");
       }
     },
-    [set, patch, finish, now],
+    [set, patch, finish, now, me],
   );
 
   // Signing out of Messenger ends a call in progress.
@@ -289,6 +300,41 @@ export function CallProvider({children}: {children: React.ReactNode}) {
         }
         return patch(current.key, {call});
       }
+      // Call waiting: someone calls while I'm on another call. Offer the choice once
+      // instead of ignoring it (the caller would hear it ring out).
+      if (
+        current &&
+        !call.endedAt &&
+        call.startedBy !== me &&
+        mine === 'ringing' &&
+        !waitingAsked.current.has(call.id)
+      ) {
+        waitingAsked.current.add(call.id);
+        Vibration.vibrate([0, 300, 200, 300]);
+        Alert.alert(
+          `${personOf(messenger.people, call.startedBy).name} is calling`,
+          call.video ? 'Incoming video call' : 'Incoming voice call',
+          [
+            {
+              text: 'Decline',
+              style: 'cancel',
+              onPress: () =>
+                void relay('calls.decline', {
+                  callId: call.id,
+                  devices: thisDevice.tokens(),
+                }).catch(() => {}),
+            },
+            {
+              text: 'End call & answer',
+              onPress: () => {
+                finish(undefined, 'calls.leave');
+                setTimeout(() => join(call, call.video, true), 300);
+              },
+            },
+          ],
+        );
+        return;
+      }
       if (
         current ||
         call.endedAt ||
@@ -306,6 +352,15 @@ export function CallProvider({children}: {children: React.ReactNode}) {
       });
       Vibration.vibrate([0, 600, 400, 600, 400], true);
       ring(true);
+      // iPhone: CallKit's own ring is already on screen (the VoIP push usually beats the
+      // live stream), so the app's ringtone steps aside rather than ringing twice.
+      if (callKit.available)
+        setTimeout(() => {
+          if (now()?.key === key && callKit.has(call.id)) {
+            ring(false);
+            Vibration.cancel();
+          }
+        }, 1500);
       // The caller gives up after RING_SECONDS; stop ringing a little after that.
       ringTimer.current = setTimeout(
         () => now()?.key === key && now()?.mode === 'incoming' && finish(),
@@ -314,7 +369,63 @@ export function CallProvider({children}: {children: React.ReactNode}) {
     };
     onEvent.current = handle;
     return messenger.onCalls(handle);
-  }, [messenger, me, set, patch, finish, now]);
+  }, [messenger, me, set, patch, finish, now, join]);
+  const waitingAsked = useRef(new Set<string>());
+
+  // Android: once connecting, the call keeps its microphone and camera with the screen
+  // locked (an ongoing-call service) and is registered with Telecom for headset, car and
+  // watch buttons. Registered once per call.
+  const registered = useRef<string | null>(null);
+  const callId = s?.url && s.call ? s.call.id : null;
+  useEffect(() => {
+    const current = ref.current;
+    if (!callId || !current || registered.current === callId) return;
+    registered.current = callId;
+    const conv = messenger?.convs.get(current.conversationId);
+    const name = conv
+      ? convTitle(conv, messenger!.people)
+      : current.call && messenger
+      ? personOf(messenger.people, current.call.startedBy).name
+      : 'Call';
+    nativeCalls.started(
+      callId,
+      current.conversationId,
+      name,
+      current.video,
+      !!current.incoming,
+    );
+  }, [callId, messenger]);
+  const active = s?.mode === 'active' ? s.call?.id : null;
+  useEffect(() => {
+    if (active) nativeCalls.connected(active);
+  }, [active]);
+  // Hung up from the ongoing-call notification, a headset, a car or a watch.
+  useEffect(
+    () =>
+      onNativeHangUp(id => {
+        const current = ref.current;
+        if (!current || (id && current.call && current.call.id !== id)) return;
+        finish(
+          undefined,
+          current.mode === 'incoming' ? 'calls.decline' : 'calls.leave',
+        );
+      }),
+    [finish],
+  );
+  // A voice call on the earpiece darkens the screen at the ear; a video call shrinks
+  // into a floating window when the person leaves the app.
+  const voiceCall = !!s?.url && !s.video;
+  const videoCall = !!s?.url && !!s?.video && !s.minimized;
+  useEffect(() => {
+    if (!voiceCall) return;
+    nativeCalls.setProximity(true);
+    return () => nativeCalls.setProximity(false);
+  }, [voiceCall]);
+  useEffect(() => {
+    if (!videoCall) return;
+    nativeCalls.setPip(true);
+    return () => nativeCalls.setPip(false);
+  }, [videoCall]);
   useEffect(() => {
     if (!s?.url) return;
     activateKeepAwakeAsync('call').catch(() => {});
@@ -518,12 +629,20 @@ function Stage({
   onHangUp,
   onMinimize,
 }: ViewProps & {status: string}) {
+  const pip = usePictureInPicture();
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
   const elapsed = s.answeredAt ? clock((now - s.answeredAt) / 1000) : status;
+  // The floating window is too small for buttons: just the video.
+  if (pip && s.url)
+    return (
+      <View style={styles.root}>
+        <Videos />
+      </View>
+    );
   if (s.minimized)
     return (
       <Pressable style={styles.bar} onPress={() => onMinimize(false)}>
@@ -672,6 +791,9 @@ function Controls({video, onHangUp}: {video: boolean; onHangUp: () => void}) {
         ? 'speaker'
         : 'earpiece';
     await AudioSession.selectAudioOutput(output).catch(() => {});
+    nativeCalls.setSpeaker(next);
+    // On the speaker the phone isn't at the ear: keep the screen on.
+    if (!video) nativeCalls.setProximity(!next);
   }
   const button = (
     icon: React.ComponentProps<typeof Ionicons>['name'],

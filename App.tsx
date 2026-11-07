@@ -1,4 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react';
+import { Linking } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -221,9 +222,17 @@ const AppContent: React.FC = () => {
   const [isSplashLoading, setIsSplashLoading] = useState(true);
 
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setIsSplashLoading(false);
     }, 3000); // Splash screen delay of 3 seconds
+    // Opened from a call (Answer, Decline or the call alert): skip the splash, every
+    // second counts while the caller waits.
+    Linking.getInitialURL()
+      .then(url => {
+        if (url?.startsWith('dmworkspace://call')) setIsSplashLoading(false);
+      })
+      .catch(() => {});
+    return () => clearTimeout(timer);
   }, []);
 
   return (

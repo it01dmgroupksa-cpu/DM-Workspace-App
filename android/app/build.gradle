@@ -173,6 +173,9 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging:25.0.1")
     // NotificationCompat.CallStyle (the Answer/Decline call alert); same version expo-notifications uses.
     implementation("androidx.core:core:1.17.0")
+    // Calls registered with Android's Telecom (Bluetooth, car and watch buttons; CallTelecom.kt).
+    implementation("androidx.core:core-telecom:1.0.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true"
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true"
