@@ -162,6 +162,12 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
+    // CallMessagingService extends Expo's FirebaseMessagingService subclass, so the app
+    // module needs Firebase Messaging on its own compile classpath (expo-notifications
+    // only declares it as `implementation`, which is not visible here). Keep this version
+    // in step with node_modules/expo-notifications/android/build.gradle.
+    implementation("com.google.firebase:firebase-messaging:25.0.1")
+
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true"
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true"
     def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true"
