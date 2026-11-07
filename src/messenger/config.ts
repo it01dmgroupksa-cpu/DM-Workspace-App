@@ -6,7 +6,7 @@ export const ERP_ORIGIN = 'https://dmgroup.frappe.cloud';
 // Expo project id used for push notifications (Expo push service). Set it after
 // creating the project with `eas init`; with it empty the app still works, but only
 // notifies while it is open. See MESSENGER.md at the repo root.
-export const EXPO_PROJECT_ID = '';
+export const EXPO_PROJECT_ID = 'bef26b8d-0729-4c34-8d35-77629adcce48';
 
 export const BRAND = {
   navy: '#153156',

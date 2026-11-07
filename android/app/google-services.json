@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "876842476270",
+    "project_id": "dm-workspace-e1bfa",
+    "storage_bucket": "dm-workspace-e1bfa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:876842476270:android:88c006ba4a00e8731509ff",
+        "android_client_info": {
+          "package_name": "com.dmworkspaceapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaLEY2Fd10nn4tgc2xY--ifAvz8agqRCg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
