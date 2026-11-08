@@ -23,24 +23,42 @@ class MainActivity : ReactActivity() {
     setTheme(R.style.AppTheme)
     super.onCreate(null)
     showOverLockScreenForCall(intent)
-    askForFullScreenCallAlerts()
+    // One system settings screen at a time: the second is asked on the next start.
+    if (!askForFullScreenCallAlerts()) askForOverlay()
+  }
+
+  // "Display over other apps": lets a ringing call open the call screen even when the phone
+  // is unlocked and another app is in front, like a phone app. Ask once.
+  private fun askForOverlay() {
+    if (Settings.canDrawOverlays(this)) return
+    val prefs = getSharedPreferences("dm_call_setup", Context.MODE_PRIVATE)
+    if (prefs.getBoolean("asked_overlay", false)) return
+    prefs.edit().putBoolean("asked_overlay", true).apply()
+    try {
+      startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+    } catch (e: Exception) {
+      // No such settings screen on this phone; calls still ring and alert as before.
+    }
   }
 
   // Android 14+ lets people switch off full-screen alerts for apps that aren't the phone
   // app, which would turn a ringing call into a quiet banner on a locked screen. Ask once.
-  private fun askForFullScreenCallAlerts() {
-    if (Build.VERSION.SDK_INT < 34) return
+  // Returns true when it opened the settings screen.
+  private fun askForFullScreenCallAlerts(): Boolean {
+    if (Build.VERSION.SDK_INT < 34) return false
     val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    if (nm.canUseFullScreenIntent()) return
+    if (nm.canUseFullScreenIntent()) return false
     val prefs = getSharedPreferences("dm_call_setup", Context.MODE_PRIVATE)
-    if (prefs.getBoolean("asked_full_screen", false)) return
+    if (prefs.getBoolean("asked_full_screen", false)) return false
     prefs.edit().putBoolean("asked_full_screen", true).apply()
-    try {
+    return try {
       startActivity(
         Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName")),
       )
+      true
     } catch (e: Exception) {
       // No such settings screen on this phone; calls still ring as a heads-up alert.
+      false
     }
   }
 
@@ -61,8 +79,7 @@ class MainActivity : ReactActivity() {
   // Once the app is in front the call screen takes over; stop the alert ringing.
   override fun onResume() {
     super.onResume()
-    (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-      .cancel(CallMessagingService.ID)
+    CallMessagingService.dismiss(this)
   }
 
   // Video calls: leaving the app (Home, another app) shrinks the call into a floating

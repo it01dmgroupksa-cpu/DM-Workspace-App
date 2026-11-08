@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- "Display over other apps": lets a ringing call open its screen over whatever is open. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Calls: keep the microphone and camera working while the screen is locked
          (OngoingCallService), and register calls with Android's Telecom (CallTelecom). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -43,6 +45,10 @@
           <action android:name="com.google.firebase.MESSAGING_EVENT" />
         </intent-filter>
       </service>
+      <service
+        android:name=".RingService"
+        android:exported="false"
+        android:foregroundServiceType="phoneCall" />
       <service
         android:name=".OngoingCallService"
         android:exported="false"

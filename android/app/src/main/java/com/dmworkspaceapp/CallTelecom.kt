@@ -171,7 +171,7 @@ object CallTelecom {
   // Hung up from a headset, car or watch, or the system ended it (a phone call took over).
   private fun systemHungUp(context: Context, callId: String) {
     calls.remove(callId)?.done?.complete(Unit)
-    (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(CallMessagingService.ID)
+    CallMessagingService.dismiss(context)
     DmCallsModule.emit("DmCallsHangup", callId)
   }
 }
