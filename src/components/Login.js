@@ -17,6 +17,12 @@ import {EmployeeContext} from '../context/EmployeeContext';
 import {EyeIcon, EyeOffIcon, UserAppIcon} from './icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useChatSession, useUnread} from '../messenger';
+import {
+  forgetCredentials,
+  loadCredentials,
+  offerBiometric,
+  useBiometric,
+} from '../biometric';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
@@ -27,19 +33,25 @@ const LoginScreen = () => {
   const {setEmployeeDetails} = useContext(EmployeeContext);
   const chat = useChatSession();
   const unread = useUnread();
+  const biometric = useBiometric();
 
-const handleLogin = async () => {
-  if (!email || !password) {
+// viaBiometric: the username and password came from Face ID, not the fields.
+const handleLogin = async (
+  username = email,
+  pass = password,
+  viaBiometric = false,
+) => {
+  if (!username || !pass) {
     Alert.alert('Invalid Input', 'Please enter both username and password.');
     return;
   }
 
   setIsLoading(true);
   try {
-    const response = await login(email, password);
+    const response = await login(username, pass);
 
     if (response.message === 'Logged In') {
-      const employeeDetails = await getEmployeeDetailsByUsername(email);
+      const employeeDetails = await getEmployeeDetailsByUsername(username);
 
       if (!employeeDetails.custom_allow_app) {
         Alert.alert(
@@ -47,7 +59,7 @@ const handleLogin = async () => {
           'You are not authorized to use this app. Please contact support for assistance.',
         );
       } else {
-        const shiftDetailsResponse = await getEmployeeShiftDetails(email);
+        const shiftDetailsResponse = await getEmployeeShiftDetails(username);
 
         if (shiftDetailsResponse && shiftDetailsResponse.custom_shift_details) {
           const shiftDetails = shiftDetailsResponse.custom_shift_details.map(
@@ -67,8 +79,9 @@ const handleLogin = async () => {
 
         // One password entry also signs Messenger in (it then stays signed in for 30 days).
         if (employeeDetails.custom_allow_chat_module && chat.status === 'signedOut') {
-          chat.signIn(email, password).catch(() => {});
+          chat.signIn(username, pass).catch(() => {});
         }
+        if (!viaBiometric) offerBiometric(username, pass);
         setEmployeeDetails(employeeDetails);
         navigation.navigate('Home', { screen: 'Attendance' });
       }
@@ -86,6 +99,16 @@ const handleLogin = async () => {
         errorData.exception === 'frappe.exceptions.AuthenticationError' ||
         (errorData.exc && errorData.exc.includes('Invalid login credentials'))
       ) {
+        if (viaBiometric) {
+          // The password was changed since Face ID saved it.
+          await forgetCredentials();
+          biometric.refresh();
+          Alert.alert(
+            'Sign in with your password',
+            `Your password has changed since you turned on ${biometric.label}. Sign in with your new password to turn it on again.`,
+          );
+          return;
+        }
         Alert.alert(
           'Login Failed',
           'Invalid username or password. Please try again.',
@@ -107,6 +130,13 @@ const handleLogin = async () => {
   }
 };
 
+
+  const handleBiometricLogin = async () => {
+    const saved = await loadCredentials();
+    if (!saved) return; // cancelled
+    setEmail(saved.username);
+    handleLogin(saved.username, saved.password, true);
+  };
 
   const handleContactSupport = () => {
     const email = 'itadmin@dmgroupksa.com';
@@ -169,7 +199,7 @@ const handleLogin = async () => {
 
         <TouchableOpacity
           style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
-          onPress={handleLogin}
+          onPress={() => handleLogin()}
           disabled={isLoading}>
           {isLoading ? (
             <ActivityIndicator color="#FFFFFF" size="small" />
@@ -177,6 +207,19 @@ const handleLogin = async () => {
             <Text style={styles.loginButtonText}>Sign In</Text>
           )}
         </TouchableOpacity>
+
+        {biometric.label && biometric.user ? (
+          <TouchableOpacity
+            style={styles.biometricButton}
+            onPress={handleBiometricLogin}
+            disabled={isLoading}
+            accessibilityLabel={`Sign in with ${biometric.label}`}>
+            <Text
+              style={[styles.biometricText, isLoading && styles.disabledText]}>
+              Sign in with {biometric.label}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
 
         <TouchableOpacity
           style={[
@@ -272,6 +315,19 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  biometricButton: {
+    backgroundColor: '#E8EEFB',
+    paddingVertical: 13,
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  biometricText: {
+    color: '#103BA9',
+    fontSize: 16,
+    fontWeight: '600',
   },
   contactSupportText: {
     color: '#103BA9',

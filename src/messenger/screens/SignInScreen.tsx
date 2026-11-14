@@ -14,6 +14,12 @@ import {Ionicons} from '@expo/vector-icons';
 import {useNavigation} from '@react-navigation/native';
 import {BRAND} from '../config';
 import {SESSION_DAYS, useChatSession} from '../session';
+import {
+  forgetCredentials,
+  loadCredentials,
+  offerBiometric,
+  useBiometric,
+} from '../../biometric';
 
 // Messenger's own sign-in, with the same ERP username and password as the app. It stays
 // signed in for SESSION_DAYS, unlike the other tabs.
@@ -25,21 +31,42 @@ export function SignInScreen({standalone}: {standalone?: boolean}) {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const biometric = useBiometric();
   useEffect(() => {
     if (lastUser) setUsername(u => u || lastUser);
   }, [lastUser]);
 
-  async function submit() {
-    if (!username.trim() || !password)
+  // viaBiometric: the username and password came from Face ID, not the fields.
+  async function submit(
+    user = username,
+    pass = password,
+    viaBiometric = false,
+  ) {
+    if (!user.trim() || !pass)
       return setError('Enter your username and password.');
     setBusy(true);
     setError('');
     try {
-      await signIn(username, password);
+      await signIn(user, pass);
+      if (!viaBiometric) offerBiometric(user.trim(), pass);
     } catch (e: any) {
-      setError(e.message || 'Sign-in failed. Try again.');
+      if (viaBiometric && e.message === 'Wrong username or password.') {
+        // The password was changed since Face ID saved it.
+        await forgetCredentials();
+        biometric.refresh();
+        setError(
+          `Your password has changed since you turned on ${biometric.label}. Sign in with your new password to turn it on again.`,
+        );
+      } else setError(e.message || 'Sign-in failed. Try again.');
       setBusy(false);
     }
+  }
+
+  async function submitWithBiometric() {
+    const saved = await loadCredentials();
+    if (!saved) return; // cancelled
+    setUsername(saved.username);
+    submit(saved.username, saved.password, true);
   }
   return (
     <SafeAreaView
@@ -53,9 +80,7 @@ export function SignInScreen({standalone}: {standalone?: boolean}) {
           <Ionicons name="arrow-back" size={23} color="#fff" />
         </Pressable>
       ) : null}
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior="padding">
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <ScrollView
           contentContainerStyle={styles.body}
           keyboardShouldPersistTaps="handled">
@@ -89,7 +114,7 @@ export function SignInScreen({standalone}: {standalone?: boolean}) {
               placeholderTextColor={BRAND.muted}
               secureTextEntry={!show}
               textContentType="password"
-              onSubmitEditing={submit}
+              onSubmitEditing={() => submit()}
               returnKeyType="go"
             />
             <Pressable
@@ -106,7 +131,7 @@ export function SignInScreen({standalone}: {standalone?: boolean}) {
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <Pressable
             style={[styles.button, busy && styles.busy]}
-            onPress={submit}
+            onPress={() => submit()}
             disabled={busy}>
             {busy ? (
               <ActivityIndicator color="#fff" />
@@ -114,6 +139,15 @@ export function SignInScreen({standalone}: {standalone?: boolean}) {
               <Text style={styles.buttonText}>Sign in to Messenger</Text>
             )}
           </Pressable>
+          {biometric.label && biometric.user ? (
+            <Pressable
+              style={[styles.bioButton, busy && styles.busy]}
+              onPress={submitWithBiometric}
+              disabled={busy}
+              accessibilityLabel={`Sign in with ${biometric.label}`}>
+              <Text style={styles.bioText}>Sign in with {biometric.label}</Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -167,5 +201,13 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   busy: {opacity: 0.7},
+  bioButton: {
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  bioText: {color: '#fff', fontSize: 16, fontWeight: '600'},
   buttonText: {color: '#fff', fontSize: 16, fontWeight: '700'},
 });

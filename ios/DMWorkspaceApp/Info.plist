@@ -36,7 +36,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Allow DM Workspace App to take attendance selfies and delivery photos, send photos in Messenger and share video in calls.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Allow DM Workspace App to use Face ID to protect your saved sign-in.</string>
+	<string>Allow DM Workspace App to use Face ID to sign you in to DM Workspace and Messenger.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Allow DM Workspace App to verify your work location for attendance.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
