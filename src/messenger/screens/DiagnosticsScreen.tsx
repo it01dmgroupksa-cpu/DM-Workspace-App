@@ -2,6 +2,8 @@ import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   AppState,
+  Linking,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -10,7 +12,10 @@ import {
   View,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import {requestRecordingPermissionsAsync} from 'expo-audio';
+import {
+  getRecordingPermissionsAsync,
+  requestRecordingPermissionsAsync,
+} from 'expo-audio';
 import * as ImagePicker from 'expo-image-picker';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
@@ -24,7 +29,8 @@ import type {MessengerStack} from '../navigation';
 // ringing or connecting, each with a light, why it matters, and a button that fixes it.
 // Permissions are asked in the app first; system settings open only when the person taps
 // a button, never by themselves. Plus a test ringtone, a test call, and this phone's own
-// trail of call steps to share with IT. Android only (DmCallsModule.diagnostics / fix).
+// trail of call steps to share with IT (DmCallsModule.diagnostics / fix). On iPhone,
+// only what iOS lets an app read: permissions and whether this phone is registered.
 
 type Level = 'ok' | 'warn' | 'bad';
 type Check = {
@@ -132,6 +138,85 @@ function checks(d: Diagnostics, registered: boolean): Check[] {
   ];
 }
 
+// iPhone: ring mode, volume and Focus can't be read by an app, so only permissions
+// and registration. Fixes ask first, then open the app's page in Settings.
+async function iosChecks(): Promise<Check[]> {
+  const [notif, mic, cam] = await Promise.all([
+    Notifications.getPermissionsAsync().catch(() => null),
+    getRecordingPermissionsAsync().catch(() => null),
+    ImagePicker.getCameraPermissionsAsync().catch(() => null),
+  ]);
+  const allowed = !!notif?.granted;
+  const ios = notif?.ios;
+  return [
+    {
+      key: 'notifications',
+      title: 'Notifications',
+      level: allowed ? 'ok' : 'bad',
+      detail: allowed
+        ? 'Allowed.'
+        : "Off: messages can't alert you, and calls may not ring.",
+      fixLabel: 'Turn on',
+    },
+    {
+      key: 'alerts',
+      title: 'Banners and lock screen',
+      level: !allowed || ios?.allowsAlert !== false ? 'ok' : 'warn',
+      detail:
+        allowed && ios?.allowsAlert === false
+          ? 'Off: messages arrive without showing on the screen.'
+          : 'Messages show on the screen.',
+      fixLabel: 'Open settings',
+    },
+    {
+      key: 'sounds',
+      title: 'Notification sounds',
+      level: !allowed || ios?.allowsSound !== false ? 'ok' : 'warn',
+      detail:
+        allowed && ios?.allowsSound === false
+          ? 'Off: messages arrive silently.'
+          : 'On.',
+      fixLabel: 'Open settings',
+    },
+    {
+      key: 'calls',
+      title: 'Registered for calls',
+      level: thisDevice.has('voip') ? 'ok' : 'bad',
+      detail: thisDevice.has('voip')
+        ? 'Calls ring like a phone call, even with the app closed.'
+        : 'Not registered yet. Allow notifications, then close and reopen Messenger. (A simulator never registers.)',
+    },
+    {
+      key: 'messages',
+      title: 'Registered for messages',
+      level: thisDevice.has('expo') ? 'ok' : 'bad',
+      detail: thisDevice.has('expo')
+        ? 'This phone gets message notifications.'
+        : 'Not registered yet. Allow notifications, then close and reopen Messenger.',
+    },
+    {
+      key: 'microphone',
+      title: 'Microphone',
+      level: mic?.granted ? 'ok' : 'bad',
+      detail: mic?.granted
+        ? 'Allowed: the other side can hear you.'
+        : 'Not allowed: you can answer, but the other side will not hear you.',
+      fixLabel: 'Allow',
+    },
+    {
+      key: 'camera',
+      title: 'Camera',
+      level: cam?.granted ? 'ok' : 'warn',
+      detail: cam?.granted
+        ? 'Allowed for video calls.'
+        : 'Not allowed: video calls work as voice only.',
+      fixLabel: 'Allow',
+    },
+  ];
+}
+
+const IOS = Platform.OS === 'ios';
+
 const COLORS: Record<Level, string> = {
   ok: '#16a34a',
   warn: '#d97706',
@@ -142,11 +227,16 @@ export function DiagnosticsScreen({
   navigation,
 }: StackScreenProps<MessengerStack, 'Diagnostics'>) {
   const [d, setD] = useState<Diagnostics | null | undefined>(undefined);
+  const [iosList, setIosList] = useState<Check[] | undefined>(undefined);
   const [ringing, setRinging] = useState(false);
   const [events, setEvents] = useState('');
   const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refresh = useCallback(() => {
+    if (IOS) {
+      iosChecks().then(setIosList);
+      return;
+    }
     nativeCalls.diagnostics().then(setD);
     nativeCalls.callEvents().then(setEvents);
   }, []);
@@ -186,7 +276,11 @@ export function DiagnosticsScreen({
         : key === 'camera'
         ? () => ImagePicker.requestCameraPermissionsAsync()
         : null;
-    if (ask) {
+    if (IOS) {
+      const result = ask ? await ask().catch(() => null) : null;
+      if (!result || (!result.granted && result.canAskAgain === false))
+        Linking.openSettings().catch(() => {});
+    } else if (ask) {
       const result = await ask().catch(() => null);
       if (result && !result.granted && result.canAskAgain === false)
         nativeCalls.fix(key);
@@ -199,7 +293,12 @@ export function DiagnosticsScreen({
       message: `DM Workspace call check\n${d?.device} · Android ${d?.android} · app ${d?.appVersion}\n\n${events}`,
     }).catch(() => {});
 
-  const list = d ? checks(d, thisDevice.tokens().length > 0) : [];
+  const list = IOS
+    ? iosList ?? []
+    : d
+    ? checks(d, thisDevice.tokens().length > 0)
+    : [];
+  const loading = IOS ? iosList === undefined : d === undefined;
   const problems = list.filter(c => c.level === 'bad').length;
 
   return (
@@ -214,9 +313,9 @@ export function DiagnosticsScreen({
         <Text style={styles.heading}>Call check</Text>
       </View>
       <ScrollView style={styles.body} contentContainerStyle={styles.content}>
-        {d === undefined ? (
+        {loading ? (
           <ActivityIndicator color={BRAND.navy} style={styles.loading} />
-        ) : d === null ? (
+        ) : !IOS && !d ? (
           <Text style={styles.note}>
             The call check needs the latest version of the app on Android.
           </Text>
@@ -259,6 +358,14 @@ export function DiagnosticsScreen({
               </View>
             ))}
 
+            {IOS || !d ? (
+              <Text style={styles.note}>
+                Also check that the Ring/Silent switch is on Ring and that no Focus
+                (Do Not Disturb, Sleep) is silencing calls: iOS doesn't let apps
+                read these.
+              </Text>
+            ) : (
+            <>
             <Text style={styles.section}>Try it</Text>
             <Pressable onPress={toggleRingtone} style={styles.action}>
               <Ionicons
@@ -305,6 +412,8 @@ export function DiagnosticsScreen({
               <Ionicons name="share-outline" size={22} color={BRAND.navy} />
               <Text style={styles.actionText}>Share with IT</Text>
             </Pressable>
+            </>
+            )}
           </>
         )}
       </ScrollView>

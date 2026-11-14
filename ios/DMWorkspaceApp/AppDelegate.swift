@@ -1,10 +1,10 @@
-import Expo
+internal import Expo
 import React
 import ReactAppDependencyProvider
 import livekit_react_native
 
 @main
-class AppDelegate: ExpoAppDelegate {
+class AppDelegate: ExpoAppDelegate, ExpoReactNativeFactoryProvider {
   var window: UIWindow?
 
   var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
@@ -24,13 +24,7 @@ class AppDelegate: ExpoAppDelegate {
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
-    window = UIWindow(frame: UIScreen.main.bounds)
-    factory.startReactNative(
-      withModuleName: "main",
-      in: window,
-      launchOptions: launchOptions
-    )
-
+    // The window and React Native start in SceneDelegate (UIScene life cycle, required by iOS 27).
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -60,6 +54,9 @@ class AppDelegate: ExpoAppDelegate {
     ) || result
   }
 }
+
+// Creates the window from the connecting scene and starts React Native into it.
+class SceneDelegate: ExpoAppSceneDelegate {}
 
 class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
   override func sourceURL(for bridge: RCTBridge) -> URL? {

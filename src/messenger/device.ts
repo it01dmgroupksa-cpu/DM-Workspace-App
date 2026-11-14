@@ -10,6 +10,9 @@ export const thisDevice = {
     if (token) tokens[kind] = token;
     else delete tokens[kind];
   },
+  has(kind: Kind): boolean {
+    return !!tokens[kind];
+  },
   tokens(): string[] {
     return [tokens.expo, tokens.fcm, tokens.voip].filter(
       (t): t is string => !!t,
