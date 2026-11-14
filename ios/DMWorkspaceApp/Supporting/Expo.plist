@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Silent app updates (expo-updates / EAS Update), the same as Android's AndroidManifest.xml
+     and app.json. Must be in the app target's "Copy Bundle Resources". Raise
+     EXUpdatesRuntimeVersion when native iOS code changes. -->
+<plist version="1.0">
+<dict>
+	<key>EXUpdatesEnabled</key>
+	<true/>
+	<key>EXUpdatesURL</key>
+	<string>https://u.expo.dev/bef26b8d-0729-4c34-8d35-77629adcce48</string>
+	<key>EXUpdatesRuntimeVersion</key>
+	<string>1</string>
+	<key>EXUpdatesCheckOnLaunch</key>
+	<string>ALWAYS</string>
+	<key>EXUpdatesLaunchWaitMs</key>
+	<integer>0</integer>
+	<key>EXUpdatesRequestHeaders</key>
+	<dict>
+		<key>expo-channel-name</key>
+		<string>production</string>
+	</dict>
+</dict>
+</plist>
