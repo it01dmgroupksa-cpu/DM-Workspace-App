@@ -1,6 +1,7 @@
 {
   "name": "DM Workspace App",
   "runtimeVersion": "1",
+  "ios": { "runtimeVersion": "2" },
   "updates": {
     "url": "https://u.expo.dev/bef26b8d-0729-4c34-8d35-77629adcce48",
     "checkAutomatically": "ON_LOAD",
