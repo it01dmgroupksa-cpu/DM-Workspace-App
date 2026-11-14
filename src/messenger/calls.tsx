@@ -46,6 +46,7 @@ import {dismissCallNotifications} from './notify';
 import {nativeCalls, onNativeHangUp, usePictureInPicture} from './nativeCalls';
 import {callKit} from './callKit';
 import {thisDevice} from './device';
+import {reportEvent} from './telemetry';
 import type {Call} from './types';
 import {Avatar} from './components/Avatar';
 
@@ -82,10 +83,15 @@ const ROOM_DELETED = 5;
 // one-to-one call is treated as over without the server saying so.
 const GONE_MS = 8000;
 
-// The ringtone, for incoming calls while the app is open. It follows the phone's
-// silent switch, as a ringtone should.
+// The ringtone. On Android it has one owner, the native ringer (RingService, Ringer.kt):
+// JavaScript only says when a call stops ringing here. Elsewhere (iPhone without
+// CallKit) the app plays its own ringtone while open, following the silent switch.
 let ringer: AudioPlayer | null = null;
-function ring(on: boolean) {
+function ring(on: boolean, callId?: string) {
+  if (nativeCalls.nativeIncoming) {
+    if (!on && callId) nativeCalls.stopRinging(callId);
+    return;
+  }
   try {
     if (!on) {
       ringer?.pause();
@@ -101,6 +107,14 @@ function ring(on: boolean) {
   } catch {
     ringer = null; // vibration still rings
   }
+}
+
+// "Calling…" until one of the other side's phones confirms it is ringing, then
+// "Ringing…", like WhatsApp. A panel that doesn't report ringingAt yet: "Ringing…".
+function outgoingStatus(call: Call | null) {
+  const others = call?.members.filter(m => m.user !== call.startedBy) ?? [];
+  if (!others.some(m => 'ringingAt' in m)) return 'Ringing…';
+  return others.some(m => m.ringingAt) ? 'Ringing…' : 'Calling…';
 }
 
 // Which camera is in use. restartTrack re-opens the capture on the other camera, which
@@ -160,7 +174,7 @@ export function CallProvider({children}: {children: React.ReactNode}) {
       if (!current) return;
       if (ringTimer.current) clearTimeout(ringTimer.current);
       Vibration.cancel();
-      ring(false);
+      ring(false, current.call?.id);
       set(null);
       if (current.call) {
         dismissCallNotifications(current.call.id);
@@ -222,7 +236,7 @@ export function CallProvider({children}: {children: React.ReactNode}) {
         return Alert.alert('Call', "You're already in a call.");
       if (ringTimer.current) clearTimeout(ringTimer.current);
       Vibration.cancel();
-      ring(false);
+      ring(false, call.id);
       dismissCallNotifications(call.id);
       const key = current?.key ?? ++keys;
       set({
@@ -350,8 +364,24 @@ export function CallProvider({children}: {children: React.ReactNode}) {
         mode: 'incoming',
         video: call.video,
       });
-      Vibration.vibrate([0, 600, 400, 600, 400], true);
-      ring(true);
+      if (nativeCalls.nativeIncoming) {
+        // Android: ring and show it natively, exactly as the push does (the push may be
+        // late, or already have rung it: one ring per call either way). The panel already
+        // counts a phone with the live stream open as ringing.
+        const conv = messenger.convs.get(call.conversationId);
+        nativeCalls.presentIncoming(
+          call.id,
+          call.conversationId,
+          conv
+            ? convTitle(conv, messenger.people)
+            : personOf(messenger.people, call.startedBy).name,
+          call.video,
+        );
+      } else {
+        Vibration.vibrate([0, 600, 400, 600, 400], true);
+        ring(true);
+      }
+      reportEvent(`incoming call on the live stream ${call.id}`);
       // iPhone: CallKit's own ring is already on screen (the VoIP push usually beats the
       // live stream), so the app's ringtone steps aside rather than ringing twice.
       if (callKit.available)
@@ -513,34 +543,50 @@ type ViewProps = {
 };
 function CallView(p: ViewProps) {
   const {s} = p;
+  // The audio session is configured and started before the room connects (LiveKit's
+  // order), so the first words are never lost to an unready audio route.
+  const [audioReady, setAudioReady] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   useEffect(() => {
     if (!s.url) return;
     let stopped = false;
+    setAudioReady(false);
     (async () => {
-      // Voice calls start on the earpiece and video calls on the speaker, as on a phone.
-      await AudioSession.configureAudio({
-        android: {
-          preferredOutputList: s.video
-            ? ['speaker', 'headset', 'bluetooth']
-            : ['earpiece', 'headset', 'bluetooth'],
-          audioTypeOptions: {} as any,
-        },
-        ios: {defaultOutput: s.video ? 'speaker' : 'earpiece'},
-      }).catch(() => {});
-      if (!stopped) await AudioSession.startAudioSession().catch(() => {});
+      try {
+        // Voice calls start on the earpiece and video calls on the speaker, as on a phone.
+        await AudioSession.configureAudio({
+          android: {
+            preferredOutputList: s.video
+              ? ['speaker', 'headset', 'bluetooth']
+              : ['earpiece', 'headset', 'bluetooth'],
+            audioTypeOptions: {} as any,
+          },
+          ios: {defaultOutput: s.video ? 'speaker' : 'earpiece'},
+        });
+        if (!stopped) await AudioSession.startAudioSession();
+      } catch (error: any) {
+        // Connect anyway: the system's default route still carries the call.
+        reportEvent(`livekit audio session failed: ${error?.message ?? error}`);
+      }
+      if (!stopped) {
+        reportEvent(`livekit_connection_started ${s.call?.id ?? ''}`);
+        setAudioReady(true);
+      }
     })();
     return () => {
       stopped = true;
       AudioSession.stopAudioSession().catch(() => {});
     };
-  }, [s.url, s.video]);
+  }, [s.url, s.video, s.call?.id]);
   const status =
     s.mode === 'incoming'
       ? s.video
         ? 'Incoming video call'
         : 'Incoming voice call'
+      : reconnecting
+      ? 'Reconnecting…'
       : s.mode === 'outgoing'
-      ? 'Ringing…'
+      ? outgoingStatus(s.call)
       : s.mode === 'connecting'
       ? 'Connecting…'
       : '';
@@ -551,24 +597,54 @@ function CallView(p: ViewProps) {
       <LiveKitRoom
         serverUrl={s.url}
         token={s.token}
-        connect
+        connect={audioReady}
         audio
         video={s.video ? {facingMode: 'user'} : false}
         options={{adaptiveStream: {pixelDensity: 'screen'}}}
-        onConnected={p.onConnected}
-        onError={() => p.onError('The call connection failed.')}>
-        <RoomWatcher {...p} />
+        onConnected={() => {
+          reportEvent(`livekit_connected ${s.call?.id ?? ''}`);
+          p.onConnected();
+        }}
+        onError={error => {
+          reportEvent(`livekit connection failed: ${error?.message ?? error}`);
+          p.onError('The call connection failed.');
+        }}>
+        <RoomWatcher {...p} onReconnecting={setReconnecting} />
         {inner}
       </LiveKitRoom>
     </Shell>
   );
 }
 // Why the connection ended decides what to tell the person and the server.
-function RoomWatcher({s, group, onEnded, onAnswered}: ViewProps) {
+function RoomWatcher({
+  s,
+  group,
+  onEnded,
+  onAnswered,
+  onReconnecting,
+}: ViewProps & {onReconnecting: (on: boolean) => void}) {
   const room = useRoomContext();
   const remote = useRemoteParticipants();
   const latest = useRef({s, onEnded, onAnswered});
   latest.current = {s, onEnded, onAnswered};
+  // A network change (Wi-Fi to mobile data, a tunnel): LiveKit reconnects by itself; the
+  // screen says so instead of looking frozen.
+  useEffect(() => {
+    const lost = () => {
+      reportEvent(`livekit_reconnecting ${latest.current.s.call?.id ?? ''}`);
+      onReconnecting(true);
+    };
+    const back = () => {
+      reportEvent(`livekit_reconnected ${latest.current.s.call?.id ?? ''}`);
+      onReconnecting(false);
+    };
+    room.on('reconnecting', lost);
+    room.on('reconnected', back);
+    return () => {
+      room.off('reconnecting', lost);
+      room.off('reconnected', back);
+    };
+  }, [room, onReconnecting]);
   useEffect(() => {
     const onDisconnected = (reason?: number) => {
       const end = latest.current.onEnded;
@@ -635,7 +711,14 @@ function Stage({
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  const elapsed = s.answeredAt ? clock((now - s.answeredAt) / 1000) : status;
+  const elapsed =
+    status === 'Reconnecting…'
+      ? status
+      : s.answeredAt
+      ? clock((now - s.answeredAt) / 1000)
+      : status;
+  // Android shows an incoming call on its own native screen (IncomingCallActivity).
+  if (s.mode === 'incoming' && nativeCalls.nativeIncoming) return null;
   // The floating window is too small for buttons: just the video.
   if (pip && s.url)
     return (

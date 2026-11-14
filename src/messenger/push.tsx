@@ -14,12 +14,14 @@ import {thisDevice} from './device';
 import {onNativeHangUp} from './nativeCalls';
 import {DeviceEventEmitter} from 'react-native';
 import {onBeforeSignOut} from './session';
+import {reportEvent, setReportUser} from './telemetry';
 import {useMessenger, type Messenger} from './store';
 import type {Call} from './types';
 
 const TOKEN_KEY = 'messenger.pushToken';
 const BATTERY_KEY = 'messenger.askedBattery';
 const VOIP_KEY = 'messenger.voipToken';
+const FCM_KEY = 'messenger.fcmToken';
 let messengerRef: Messenger | null = null;
 const handled = new Set<string>();
 
@@ -118,15 +120,45 @@ async function register() {
   await relay('devices.register', {
     token,
     platform: Platform.OS === 'ios' ? 'ios' : 'android',
+    ...(await deviceInfo()),
   });
   await AsyncStorage.setItem(TOKEN_KEY, token);
   thisDevice.set('expo', token);
   // iPhone: also the VoIP token, so calls ring through CallKit like a phone call.
   const voip = callKit.voipToken();
   if (voip) await registerVoip(voip);
+  // Android: also the phone's own Firebase token, so the panel can send a call straight
+  // through Firebase (faster, high priority, short-lived) instead of through Expo. A
+  // panel that doesn't know 'android-fcm' yet refuses it; Expo pushes still ring.
+  if (Platform.OS === 'android') await registerFcm().catch(() => {});
+}
+async function registerFcm(given?: string) {
+  const token = given ?? (await Notifications.getDevicePushTokenAsync()).data;
+  if (typeof token !== 'string' || !token) return;
+  // A rotated token: the panel forgets the old one (same phone, same channel).
+  await relay('devices.register', {
+    token,
+    platform: 'android-fcm',
+    ...(await deviceInfo()),
+  });
+  await AsyncStorage.setItem(FCM_KEY, token);
+  thisDevice.set('fcm', token);
+}
+// Which phone the tokens belong to: one installation id (Android), and the model, so the
+// panel rings each phone once and its call trail names the phone.
+async function deviceInfo() {
+  const deviceId = await nativeCalls.deviceId();
+  return {
+    ...(deviceId ? {deviceId} : {}),
+    ...(Device.modelName ? {model: Device.modelName.slice(0, 80)} : {}),
+  };
 }
 async function registerVoip(token: string) {
-  await relay('devices.register', {token, platform: 'ios-voip'});
+  await relay('devices.register', {
+    token,
+    platform: 'ios-voip',
+    ...(await deviceInfo()),
+  });
   await AsyncStorage.setItem(VOIP_KEY, token);
   thisDevice.set('voip', token);
 }
@@ -136,7 +168,12 @@ async function registerVoip(token: string) {
 export async function unregisterPush() {
   const token = await AsyncStorage.getItem(TOKEN_KEY).catch(() => null);
   thisDevice.set('expo', null);
+  thisDevice.set('fcm', null);
   thisDevice.set('voip', null);
+  setReportUser(null);
+  const fcm = await AsyncStorage.getItem(FCM_KEY).catch(() => null);
+  await AsyncStorage.removeItem(FCM_KEY).catch(() => {});
+  if (fcm) await relay('devices.unregister', {token: fcm}).catch(() => {});
   await AsyncStorage.removeItem(TOKEN_KEY).catch(() => {});
   if (token) await relay('devices.unregister', {token}).catch(() => {});
   const voip = await AsyncStorage.getItem(VOIP_KEY).catch(() => null);
@@ -159,13 +196,34 @@ async function respondToCall(
   data: any,
   action: 'answer' | 'decline',
 ): Promise<boolean> {
-  const {calls: live} = await relay<{calls: Call[]}>('calls.live').catch(() => ({
-    calls: [] as Call[],
-  }));
-  const call = live.find(x => x.id === data.callId);
+  // The panel decides whether the call can still be taken, never the push. The app may
+  // have just started (answered from the lock screen): try twice before giving up.
+  const live = async () =>
+    (await relay<{calls: Call[]}>('calls.live')).calls;
+  let calls: Call[] | null = await live().catch(() => null);
+  if (!calls)
+    calls = await new Promise<Call[] | null>(resolve =>
+      setTimeout(() => live().then(resolve, () => resolve(null)), 1500),
+    );
+  const call = calls?.find(x => x.id === data.callId);
   const mine = call?.members.find(m => m.user === me)?.state;
   dismissCallNotifications(data.callId);
+  nativeCalls.stopRinging(data.callId);
   if (action === 'decline') nativeCalls.ended(data.callId);
+  reportEvent(
+    `call_state_verified ${data.callId} ${action}: ${
+      calls ? (call ? `call ${call.status ?? 'live'}, mine ${mine}` : 'over') : 'unreachable'
+    }`,
+  );
+  if (action === 'answer' && !(call && mine === 'ringing'))
+    Alert.alert(
+      'Call',
+      !calls
+        ? "Couldn't reach the server to answer. Check your connection."
+        : mine === 'joined'
+        ? 'You answered this call on another device.'
+        : 'This call has ended.',
+    );
   // Still ringing for me: answer or decline it here. Already answered on another
   // device, or over: just open the chat, never take the call over by accident.
   if (call && mine === 'ringing') {
@@ -222,11 +280,13 @@ export function PushBridge() {
   callsRef.current = calls;
   useEffect(() => {
     messengerRef = messenger;
+    setReportUser(messenger.me);
     // This phone's tokens from last time, until register() confirms them.
-    AsyncStorage.multiGet([TOKEN_KEY, VOIP_KEY])
-      .then(([[, expo], [, voip]]) => {
+    AsyncStorage.multiGet([TOKEN_KEY, VOIP_KEY, FCM_KEY])
+      .then(([[, expo], [, voip], [, fcm]]) => {
         thisDevice.set('expo', expo);
         thisDevice.set('voip', voip);
+        thisDevice.set('fcm', fcm);
       })
       .catch(() => {});
     setup()
@@ -243,9 +303,16 @@ export function PushBridge() {
       if (state === 'active') setTimeout(clean, 3000); // after the catch-up
     });
     setTimeout(clean, 5000);
+    // Firebase rotates an Android phone's token now and then: register the new one at
+    // once, or calls sent straight through Firebase would stop reaching this phone.
+    const rotated = Notifications.addPushTokenListener(({data, type}) => {
+      if (Platform.OS === 'android' && type === 'android' && typeof data === 'string')
+        registerFcm(data).catch(() => {});
+    });
     return () => {
       messengerRef = null;
       sub.remove();
+      rotated.remove();
     };
   }, [messenger]);
 

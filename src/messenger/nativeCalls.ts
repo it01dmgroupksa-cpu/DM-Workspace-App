@@ -17,11 +17,46 @@ type Native = {
   ): void;
   callConnected(callId: string): void;
   callEnded(callId: string): void;
+  presentIncoming(
+    callId: string,
+    conversationId: string,
+    title: string,
+    video: boolean,
+  ): void;
+  stopRinging(callId: string): void;
+  deviceId(): Promise<string>;
+  callEvents(): Promise<string>;
   setSpeaker(on: boolean): void;
   setProximity(on: boolean): void;
   setPip(on: boolean): void;
   batteryExempt(): Promise<boolean>;
   requestBatteryExemption(): void;
+  diagnostics(): Promise<Diagnostics>;
+  fix(kind: string): void;
+  testRingtone(on: boolean): void;
+  testCallScreen(): void;
+  reportError(message: string, stack: string, fatal: boolean): void;
+  reportEvent(message: string): void;
+  setUser(id: string | null): void;
+};
+
+// What the call check (DiagnosticsScreen) shows, from DmCallsModule.diagnostics.
+export type Diagnostics = {
+  notifications: boolean;
+  callAlerts: boolean;
+  fullScreen: boolean;
+  microphone: boolean;
+  camera: boolean;
+  battery: boolean;
+  ringer: 'normal' | 'vibrate' | 'silent';
+  ringVolume: number;
+  ringVolumeMax: number;
+  dnd: boolean;
+  device: string;
+  android: string;
+  is64bit: boolean;
+  lastRing: string;
+  appVersion: string;
 };
 const native: Native | null =
   Platform.OS === 'android' ? NativeModules.DmCalls ?? null : null;
@@ -56,6 +91,34 @@ export const nativeCalls = {
     safely(n => n.callEnded(callId));
     callKit.endCall(callId);
   },
+  // Android: incoming calls ring and show natively (RingService, IncomingCallActivity),
+  // whether the push or the live stream saw them first; one ring per call. JavaScript
+  // then keeps the call's state but shows no ringing screen of its own.
+  nativeIncoming: typeof native?.presentIncoming === 'function',
+  presentIncoming: (
+    callId: string,
+    conversationId: string,
+    title: string,
+    video: boolean,
+  ) =>
+    safely(n => n.presentIncoming(callId, conversationId, title, video)),
+  // The call stopped ringing for this phone: ringtone, alert and call screen go.
+  stopRinging: (callId: string) => safely(n => n.stopRinging(callId)),
+  deviceId: async (): Promise<string | null> => {
+    try {
+      return native?.deviceId ? await native.deviceId() : null;
+    } catch {
+      return null;
+    }
+  },
+  // This phone's own trail of call steps (Telemetry.kt), newest last.
+  callEvents: async (): Promise<string> => {
+    try {
+      return native?.callEvents ? await native.callEvents() : '';
+    } catch {
+      return '';
+    }
+  },
   setSpeaker: (on: boolean) => safely(n => n.setSpeaker(on)),
   setProximity: (on: boolean) => safely(n => n.setProximity(on)),
   setPip: (on: boolean) => safely(n => n.setPip(on)),
@@ -67,6 +130,22 @@ export const nativeCalls = {
     }
   },
   requestBatteryExemption: () => safely(n => n.requestBatteryExemption()),
+  // The call check. null where there is no native side (iPhone, or an old build).
+  diagnostics: async (): Promise<Diagnostics | null> => {
+    try {
+      return native?.diagnostics ? await native.diagnostics() : null;
+    } catch {
+      return null;
+    }
+  },
+  fix: (kind: string) => safely(n => n.fix(kind)),
+  testRingtone: (on: boolean) => safely(n => n.testRingtone(on)),
+  testCallScreen: () => safely(n => n.testCallScreen()),
+  // Reports to Crashlytics (telemetry.ts).
+  reportError: (message: string, stack: string, fatal: boolean) =>
+    safely(n => n.reportError(message, stack, fatal)),
+  reportEvent: (message: string) => safely(n => n.reportEvent(message)),
+  setUser: (id: string | null) => safely(n => n.setUser(id)),
 };
 
 // Hang up from the ongoing-call notification, a headset, a car or a watch.

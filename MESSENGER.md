@@ -160,13 +160,19 @@ Pushes go from the panel through Expo's push service to Firebase (Android) and A
 4. Optional: if "Enhanced push security" is turned on for the Expo project, set
    `EXPO_ACCESS_TOKEN` in the panel's `.env`.
 
-**Ringing on a closed or locked phone (Android).** The `calls` channel plays a 30 second
-ringtone (`android/app/src/main/res/raw/ring.wav`) at ringtone volume with strong
-vibration. For it to apply, the panel's push for a call must carry
-`"channelId": "calls"` and `"priority": "high"`. With no `EXPO_PROJECT_ID` and no
-`google-services.json` no push is delivered at all, so nothing can ring while the app
-is closed. Channels cannot be changed once created: after updating from a build that
-ran with the old `calls` channel, uninstall and reinstall (or clear app data) once.
+**Ringing on a closed or locked phone (Android).** A call push rings natively, without
+JavaScript: the full-screen call screen, a call alert with Answer and Decline, and the
+phone's own ringtone (or `res/raw/ring.wav`) at ring volume. How it works, the push
+contract and where to look when a phone didn't ring: `CALLS-BACKEND.md`. For calls to go
+straight through Firebase, the panel needs its `FCM_*` settings (the panel's
+`docs/MESSENGER-ROLLOUT.md`, A4d); until then they go through Expo and still ring
+natively. With no `EXPO_PROJECT_ID` and no `google-services.json` no push is delivered
+at all, so nothing can ring while the app is closed.
+
+**Call check.** Messenger's header has a pulse icon (Android): every phone setting that
+stops calls ringing (notifications, call alerts, ring mode and volume, Do Not Disturb,
+full-screen calls, background running, microphone, camera), each with a fix button, a
+test ringtone, a test call, and the phone's recent call steps to share with IT.
 
 ### 5. Panel and ERP (done by IT, once, before the app ships)
 
@@ -198,15 +204,15 @@ npm run lint
 
 ## Known limits
 
-- **iOS incoming calls** arrive as a notification with Answer and Decline buttons,
-  not the full-screen phone ring (CallKit). That would need Apple VoIP push, which
-  Expo's push service doesn't send.
-- **A call notification on a closed phone** can't be withdrawn remotely. If the
-  call is answered elsewhere, the notification stays until it expires (45 seconds)
-  or is tapped, which then only opens the chat.
-- **Android, mid-call:** if the employee leaves the app during a call, Android may
-  stop the microphone after a short time, because the app runs no foreground
-  "ongoing call" service yet. Coming back to the app restores it.
+- **iOS incoming calls** ring through CallKit only once the iOS project has its real
+  bundle id and the Voice over IP capability, and the panel has its `APNS_*` settings.
+  Until then an iPhone gets a time-sensitive notification with Answer and Decline.
+- **Android limits nothing can work around:** a force-stopped app, notifications turned
+  off, the phone in silent or vibrate mode, "Full-screen calls" denied (Android 14+: the
+  call then shows as a banner on the lock screen), strict phone-maker battery savers,
+  or no network. Call check shows each of these.
+- **Unlocked phone, another app in front:** Android shows the call as a pop-up banner
+  with Answer and Decline, not the full screen, as for WhatsApp.
 - **Password changed, app not opened:** the phone keeps getting notifications until
   Messenger is next opened, where it signs out and unregisters.
 - **Call waiting:** a second call while already in a call doesn't ring on that

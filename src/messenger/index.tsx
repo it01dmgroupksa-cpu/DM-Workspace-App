@@ -13,6 +13,11 @@ import {ChatScreen} from './screens/ChatScreen';
 import {InfoScreen} from './screens/InfoScreen';
 import {NewChatScreen} from './screens/NewChatScreen';
 import {SignInScreen} from './screens/SignInScreen';
+import {DiagnosticsScreen} from './screens/DiagnosticsScreen';
+import {installErrorReporting} from './telemetry';
+
+// JavaScript errors reach Crashlytics alongside native crashes (telemetry.ts).
+installErrorReporting();
 
 export {navigationRef} from './navigation';
 export {useUnread} from './store';
@@ -66,6 +71,7 @@ function Chats({standalone}: {standalone?: boolean}) {
         <Stack.Screen name="Chat" component={ChatScreen} />
         <Stack.Screen name="Info" component={InfoScreen} />
         <Stack.Screen name="NewChat" component={NewChatScreen} />
+        <Stack.Screen name="Diagnostics" component={DiagnosticsScreen} />
       </Stack.Navigator>
     </StandaloneContext.Provider>
   );

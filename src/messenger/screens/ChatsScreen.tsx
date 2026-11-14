@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -279,6 +280,14 @@ export function ChatsScreen({
         <Text style={[styles.heading, styles.flex]}>
           {archived ? 'Archived' : 'Messenger'}
         </Text>
+        {!archived && Platform.OS === 'android' ? (
+          <Pressable
+            onPress={() => navigation.navigate('Diagnostics')}
+            style={styles.headerBtn}
+            accessibilityLabel="Call check">
+            <Ionicons name="pulse-outline" size={23} color="#fff" />
+          </Pressable>
+        ) : null}
         {!archived ? (
           <Pressable
             onPress={() =>

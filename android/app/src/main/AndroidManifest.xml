@@ -16,8 +16,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    <!-- "Display over other apps": lets a ringing call open its screen over whatever is open. -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- No SYSTEM_ALERT_WINDOW: calls never draw over other apps. The call screen opens
+         through the call alert's full-screen intent, as Android intends. -->
     <!-- Calls: keep the microphone and camera working while the screen is locked
          (OngoingCallService), and register calls with Android's Telecom (CallTelecom). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -45,6 +45,20 @@
           <action android:name="com.google.firebase.MESSAGING_EVENT" />
         </intent-filter>
       </service>
+      <!-- The native incoming call screen: over the lock screen, its own task. -->
+      <activity
+        android:name=".IncomingCallActivity"
+        android:exported="false"
+        android:launchMode="singleTop"
+        android:taskAffinity="com.dmworkspaceapp.incomingcall"
+        android:excludeFromRecents="true"
+        android:showWhenLocked="true"
+        android:turnScreenOn="true"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+      <!-- The call alert's Decline, when the panel sent a link to decline with. -->
+      <receiver
+        android:name=".CallActionReceiver"
+        android:exported="false" />
       <service
         android:name=".RingService"
         android:exported="false"

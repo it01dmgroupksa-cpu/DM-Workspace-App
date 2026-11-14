@@ -28,6 +28,8 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // The call event trail (Call check screen, Crashlytics, logcat) before anything rings.
+    Telemetry.attach(this)
     // Messenger calls: must run before React Native loads.
     LiveKitReactNative.setup(this, AudioType.CommunicationAudioType())
     DefaultNewArchitectureEntryPoint.releaseLevel = try {

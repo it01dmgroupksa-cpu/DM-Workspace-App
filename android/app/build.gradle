@@ -4,6 +4,8 @@ apply plugin: "com.facebook.react"
 // Push notifications on Android go through Firebase; add google-services.json to enable them.
 if (file("google-services.json").exists()) {
     apply plugin: "com.google.gms.google-services"
+    // Crash reports and the call-event trail (Telemetry.kt) in the Firebase console.
+    apply plugin: "com.google.firebase.crashlytics"
 }
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
@@ -175,6 +177,9 @@ dependencies {
     implementation("androidx.core:core:1.17.0")
     // Calls registered with Android's Telecom (Bluetooth, car and watch buttons; CallTelecom.kt).
     implementation("androidx.core:core-telecom:1.0.0")
+    // Crashes and call problems from people's phones (Telemetry.kt). Without
+    // google-services.json it is inert and Telemetry only writes to logcat.
+    implementation("com.google.firebase:firebase-crashlytics:21.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true"

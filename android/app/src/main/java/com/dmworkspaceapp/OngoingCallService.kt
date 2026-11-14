@@ -34,6 +34,7 @@ class OngoingCallService : Service() {
       if (!DmCallsModule.emit("DmCallsHangup", intent.getStringExtra(EXTRA_CALL_ID))) stopSelf()
       return START_NOT_STICKY
     }
+    running = true
     show(
       callId = intent?.getStringExtra(EXTRA_CALL_ID) ?: "",
       title = intent?.getStringExtra(EXTRA_TITLE) ?: "Call",
@@ -100,6 +101,7 @@ class OngoingCallService : Service() {
     ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
   override fun onDestroy() {
+    running = false
     ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
     super.onDestroy()
   }
@@ -111,6 +113,10 @@ class OngoingCallService : Service() {
     const val EXTRA_CALL_ID = "callId"
     const val EXTRA_TITLE = "title"
     const val EXTRA_VIDEO = "video"
+
+    // True while a call is under way (Ringer must not touch the audio mode then).
+    @Volatile
+    var running = false
 
     fun start(context: Context, callId: String, title: String, video: Boolean) {
       val intent = Intent(context, OngoingCallService::class.java)

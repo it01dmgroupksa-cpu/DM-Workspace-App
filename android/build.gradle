@@ -8,6 +8,8 @@ buildscript {
         classpath('com.facebook.react:react-native-gradle-plugin')
         classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
         classpath('com.google.gms:google-services:4.4.2')
+        // Crash and call-event reports (Telemetry.kt), applied with google-services.
+        classpath('com.google.firebase:firebase-crashlytics-gradle:3.0.8')
     }
 }
 

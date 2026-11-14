@@ -1,10 +1,15 @@
 package com.dmworkspaceapp
 
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -50,6 +55,40 @@ class DmCallsModule(private val context: ReactApplicationContext) : ReactContext
     }
     CallTelecom.end(callId, android.telecom.DisconnectCause.LOCAL)
     setProximity(false)
+  }
+
+  // A call seen on the app's live stream (the push may be late or lost): ring it natively,
+  // exactly as the push would. Ignored when the push already rang it (one ring per call).
+  @ReactMethod
+  fun presentIncoming(callId: String, conversationId: String, title: String, video: Boolean) {
+    try {
+      val call = IncomingCall(callId, conversationId, video, title.ifEmpty { "Incoming call" }, "", "")
+      if (IncomingCalls.present(context, call, "stream"))
+        CallTelecom.ringing(context, callId, conversationId, call.title, video)
+    } catch (e: Exception) {
+      Telemetry.problem("could not ring $callId from the live stream", e)
+    }
+  }
+
+  // The call stopped ringing for this phone (answered, declined, cancelled, over): stop the
+  // ringtone, the alert and the call screen, and never ring it again.
+  @ReactMethod
+  fun stopRinging(callId: String) {
+    try {
+      CallMessagingService.dismiss(context, callId)
+    } catch (e: Exception) {
+    }
+  }
+
+  // One id per installation, so the panel knows a phone's tokens belong to one phone.
+  @ReactMethod
+  fun deviceId(promise: Promise) {
+    val prefs = context.getSharedPreferences("dm_device", Context.MODE_PRIVATE)
+    promise.resolve(
+      prefs.getString("id", null) ?: java.util.UUID.randomUUID().toString().also {
+        prefs.edit().putString("id", it).apply()
+      },
+    )
   }
 
   @ReactMethod
@@ -108,6 +147,122 @@ class DmCallsModule(private val context: ReactApplicationContext) : ReactContext
       } catch (e2: Exception) {
       }
     }
+  }
+
+  // ---- Call check (DiagnosticsScreen.tsx): everything that stops a call ringing. ----
+
+  @ReactMethod
+  fun diagnostics(promise: Promise) {
+    try {
+      val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+      val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+      val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+      CallMessagingService.ensureChannels(nm)
+      val granted = { p: String ->
+        androidx.core.content.ContextCompat.checkSelfPermission(context, p) == android.content.pm.PackageManager.PERMISSION_GRANTED
+      }
+      val channelOn = Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+        (nm.getNotificationChannel(CallMessagingService.CHANNEL)?.importance ?: NotificationManager.IMPORTANCE_HIGH) >=
+        NotificationManager.IMPORTANCE_HIGH
+      val result = Arguments.createMap().apply {
+        putBoolean("notifications", NotificationManagerCompat.from(context).areNotificationsEnabled())
+        putBoolean("callAlerts", channelOn)
+        putBoolean("fullScreen", Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent())
+        putBoolean("microphone", granted(android.Manifest.permission.RECORD_AUDIO))
+        putBoolean("camera", granted(android.Manifest.permission.CAMERA))
+        putBoolean("battery", pm.isIgnoringBatteryOptimizations(context.packageName))
+        putString("ringer", Ringer.modeName(am.ringerMode))
+        putInt("ringVolume", am.getStreamVolume(AudioManager.STREAM_RING))
+        putInt("ringVolumeMax", am.getStreamMaxVolume(AudioManager.STREAM_RING))
+        putBoolean("dnd", nm.currentInterruptionFilter > NotificationManager.INTERRUPTION_FILTER_ALL)
+        putString("device", "${Build.MANUFACTURER} ${Build.MODEL}")
+        putString("android", "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+        putBoolean("is64bit", Build.SUPPORTED_64_BIT_ABIS.isNotEmpty())
+        putString("lastRing", Ringer.lastOutcome)
+        putString("appVersion", BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")")
+      }
+      promise.resolve(result)
+    } catch (e: Exception) {
+      promise.reject("diagnostics", e.message, e)
+    }
+  }
+
+  // A "Fix" button: change the setting where Android lets an app, else open its screen.
+  @ReactMethod
+  fun fix(kind: String) {
+    val pkg = Uri.parse("package:${context.packageName}")
+    val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    val screen: Intent = when (kind) {
+      "notifications", "callAlerts" ->
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+      "fullScreen" ->
+        if (Build.VERSION.SDK_INT >= 34) Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg)
+        else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)
+      "microphone", "camera" -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)
+      "battery" -> return requestBatteryExemption()
+      "ringer" -> {
+        try {
+          am.ringerMode = AudioManager.RINGER_MODE_NORMAL
+          return
+        } catch (e: Exception) {
+          Intent(Settings.ACTION_SOUND_SETTINGS) // Do Not Disturb holds it: let the person change it
+        }
+      }
+      "volume" -> {
+        try {
+          val max = am.getStreamMaxVolume(AudioManager.STREAM_RING)
+          am.setStreamVolume(AudioManager.STREAM_RING, max, AudioManager.FLAG_SHOW_UI)
+          return
+        } catch (e: Exception) {
+          Intent(Settings.ACTION_SOUND_SETTINGS)
+        }
+      }
+      "dnd" -> Intent(Settings.ACTION_SOUND_SETTINGS)
+      else -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)
+    }
+    try {
+      context.startActivity(screen.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) {
+      try {
+        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      } catch (e2: Exception) {
+      }
+    }
+  }
+
+  @ReactMethod
+  fun testRingtone(on: Boolean) {
+    if (on) Ringer.start(context) else Ringer.stop()
+  }
+
+  // Rings and shows the native call screen exactly as a real call would, through the same
+  // path (IncomingCalls); nothing is sent anywhere.
+  @ReactMethod
+  fun testCallScreen() {
+    IncomingCalls.present(context, IncomingCall.test(), "test")
+  }
+
+  // The phone's own record of the latest call steps (Telemetry), for the Call check screen.
+  @ReactMethod
+  fun callEvents(promise: Promise) {
+    promise.resolve(Telemetry.recent())
+  }
+
+  // ---- Reports (telemetry.ts) ----
+
+  @ReactMethod
+  fun reportError(message: String, stack: String, fatal: Boolean) {
+    Telemetry.jsError(message, stack, fatal)
+  }
+
+  @ReactMethod
+  fun reportEvent(message: String) {
+    Telemetry.event(message)
+  }
+
+  @ReactMethod
+  fun setUser(id: String?) {
+    Telemetry.setUser(id)
   }
 
   // Required by React Native's NativeEventEmitter.

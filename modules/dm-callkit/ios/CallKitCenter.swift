@@ -29,6 +29,18 @@ final class CallKitCenter: NSObject, PKPushRegistryDelegate, CXProviderDelegate 
     let video: Bool
     let outgoing: Bool
     var answered: Bool
+    // The panel's signed link to decline without the app (lib/messenger/push.ts).
+    var declineUrl: String = ""
+  }
+
+  // POSTs one of the panel's signed call links (ring confirmation, decline). Best effort.
+  private func post(_ link: String?) {
+    guard let link = link, link.hasPrefix("https://"), let url = URL(string: link) else { return }
+    var request = URLRequest(url: url, timeoutInterval: 8)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = Data("{}".utf8)
+    URLSession.shared.dataTask(with: request).resume()
   }
 
   private var registry: PKPushRegistry?
@@ -91,18 +103,33 @@ final class CallKitCenter: NSObject, PKPushRegistryDelegate, CXProviderDelegate 
     update.supportsUngrouping = false
     update.supportsDTMF = false
 
-    if (data["type"] as? String) == "call" {
+    // A ring that arrived after the caller gave up (sentAt is the panel's clock, in ms):
+    // Apple still requires it to be reported, so report it and end it at once.
+    let sentAt = (data["sentAt"] as? NSNumber)?.doubleValue ?? 0
+    let late = sentAt > 0 && Date().timeIntervalSince1970 * 1000 - sentAt > 45_000
+    if (data["type"] as? String) == "call" && !late && calls[uuid] == nil {
       calls[uuid] = Info(
         callId: callId,
         conversationId: data["conversationId"] as? String ?? "",
         video: video,
         outgoing: false,
-        answered: false
+        answered: false,
+        declineUrl: data["declineUrl"] as? String ?? ""
       )
       provider.reportNewIncomingCall(with: uuid, update: update) { error in
-        if error != nil { self.calls[uuid] = nil }
+        if error != nil {
+          self.calls[uuid] = nil
+        } else {
+          // It is ringing: the caller sees "Ringing", and the panel stops re-sending.
+          self.post(data["ackUrl"] as? String)
+        }
         completion()
       }
+      return
+    }
+    // The same call pushed again while it rings: nothing new to show.
+    if (data["type"] as? String) == "call" && calls[uuid] != nil {
+      completion()
       return
     }
     // Stop ringing: the caller hung up, it was answered elsewhere, or nobody answered.
@@ -144,6 +171,10 @@ final class CallKitCenter: NSObject, PKPushRegistryDelegate, CXProviderDelegate 
 
   func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
     if let info = calls.removeValue(forKey: action.callUUID), fromApp.remove(action.callUUID) == nil {
+      // Declined on the lock screen: tell the panel straight away, without waiting for the
+      // app to start. JavaScript declines again through the relay when it runs; the panel
+      // treats a repeat as nothing new.
+      if !info.outgoing && !info.answered { post(info.declineUrl) }
       send("DmCallKitEnd", info)
     }
     action.fulfill()

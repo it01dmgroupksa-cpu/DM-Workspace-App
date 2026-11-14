@@ -1,131 +1,140 @@
 package com.dmworkspaceapp
 
-import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.telecom.DisconnectCause
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import com.google.firebase.messaging.RemoteMessage
 import expo.modules.notifications.service.ExpoFirebaseMessagingService
-import org.json.JSONObject
 
 /**
- * Incoming call pushes ring like a phone call, the way WhatsApp does: a call-style alert
- * with Answer and Decline, the app's own ringtone (RingService), and a full-screen call
- * screen over the lock screen. Every other push goes to Expo as before. The manifest gives
- * this service a higher priority than Expo's, so Firebase delivers to it first.
+ * Every push arrives here first (the manifest gives this service a higher priority than
+ * Expo's). A call push rings natively, whatever state the app is in: closed, in the
+ * background or open. Nothing here waits for JavaScript, the network or LiveKit before
+ * ringing. Every other push goes on to Expo as before.
  *
- * If anything here fails, the push is handed to Expo's ordinary notification instead, so
- * a call is never silently lost.
+ * Call pushes come straight from the panel through Firebase, or through Expo's push
+ * service; CallPush reads both. The moment the phone rings it tells the panel (ackUrl),
+ * so the caller sees "Ringing".
  */
 class CallMessagingService : ExpoFirebaseMessagingService() {
   override fun onMessageReceived(remoteMessage: RemoteMessage) {
-    val data = remoteMessage.data
-    val body = try { JSONObject(data["body"] ?: "{}") } catch (e: Exception) { JSONObject() }
-    // The call is over, or was answered on another device: stop ringing. A silent push with
-    // nothing to show, so it never goes to Expo (which would try to display it).
-    if (body.optString("type") == "call-cancel") {
-      dismiss(this)
-      CallTelecom.cancelRinging(body.optString("callId"), android.telecom.DisconnectCause.REMOTE)
-      return
-    }
-    // Missed: stop the ring, then let Expo show "Missed call from X" like any message.
-    if (body.optString("type") == "missed-call") {
-      dismiss(this)
-      CallTelecom.cancelRinging(body.optString("callId"), android.telecom.DisconnectCause.MISSED)
-      return super.onMessageReceived(remoteMessage)
-    }
-    if (body.optString("type") != "call" || isAppInForeground()) {
-      return super.onMessageReceived(remoteMessage)
-    }
-    try {
-      showIncomingCall(
-        title = data["title"] ?: "Incoming call",
-        text = data["message"] ?: "",
-        callId = body.optString("callId"),
-        conversationId = body.optString("conversationId"),
-        video = body.optBoolean("video", false),
-      )
+    val push = try {
+      CallPush.parse(remoteMessage.data)
     } catch (e: Exception) {
-      super.onMessageReceived(remoteMessage)
+      Telemetry.problem("unreadable push", e)
+      null
+    } ?: return super.onMessageReceived(remoteMessage) // not about a call
+    Telemetry.event(
+      "native_push_received ${push.type} ${push.callId} via ${push.route}" +
+        " priority=${remoteMessage.priority}/${remoteMessage.originalPriority}" +
+        if (push.sentAt > 0) " age=${System.currentTimeMillis() - push.sentAt}ms" else "",
+    )
+    when (push.type) {
+      // The call is over, or was answered on another device: stop ringing, and never
+      // start if its ring is still on the way. Nothing to show.
+      "call-cancel" -> {
+        dismiss(this, push.callId)
+        CallTelecom.cancelRinging(push.callId, DisconnectCause.REMOTE)
+      }
+      // Missed: stop the ring, then Expo shows "Missed call from X" like any message.
+      "missed-call" -> {
+        dismiss(this, push.callId)
+        CallTelecom.cancelRinging(push.callId, DisconnectCause.MISSED)
+        if (push.route == "expo") super.onMessageReceived(remoteMessage)
+      }
+      else -> ring(push)
     }
   }
 
-  private fun isAppInForeground(): Boolean {
-    val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-    val me = am.runningAppProcesses?.firstOrNull { it.pid == android.os.Process.myPid() }
-    return me?.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
-  }
-
-  private fun showIncomingCall(title: String, text: String, callId: String, conversationId: String, video: Boolean) {
-    try {
-      // The ring service shows the alert, plays the ringtone and opens the call screen.
-      RingService.start(this, title, text, callId, conversationId, video)
-    } catch (e: Exception) {
-      // Not allowed to start it (rare): still show the alert and ring from here.
-      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-      nm.notify(ID, buildIncomingCall(this, title, text, callId, conversationId, video))
-      Ringer.start(this)
+  private fun ring(push: CallPush) {
+    if (!push.valid()) return Telemetry.problem("call push without a valid call or chat id: not rung")
+    if (push.expired()) {
+      CallRegistry.settle(this, push.callId)
+      return Telemetry.event("late call push ignored ${push.callId}")
     }
-    CallTelecom.ringing(this, callId, conversationId, title, video)
+    if (!IncomingCalls.present(this, IncomingCall.from(push), "push:${push.route}")) return
+    // It is ringing: tell the panel, so the caller sees "Ringing".
+    CallPush.post(push.ackUrl, "ringing confirmation ${push.callId}")
+    CallTelecom.ringing(this, push.callId, push.conversationId, push.title, push.video)
+    // The app is open: its call screen follows the call from here on.
+    DmCallsModule.emit("DmCallsIncoming", push.callId)
   }
 
   companion object {
-    // A new id whenever the channel's settings change: a channel's settings are fixed once
-    // created. The channel is silent: the ringtone and vibration are played by Ringer.
+    // A new id whenever a channel's settings change: they are fixed once created. Both
+    // channels are silent, because the ringtone and vibration have one owner: Ringer.
+    // A channel sound as well would ring twice.
     const val CHANNEL = "incoming_calls_v4"
+    // The same alert while the app itself is in front (its call screen is open): no pop-up.
+    private const val CHANNEL_IN_APP = "incoming_calls_in_app"
     private val OLD_CHANNELS = listOf("incoming_calls_v2", "incoming_calls_v3")
     const val ID = 7001
 
-    // Stops the call alert and the ringtone: answered, declined, cancelled or missed.
-    fun dismiss(context: Context) {
+    // Stops the call alert, the ringtone and the call screen: answered, declined,
+    // cancelled or missed. With the call's id, it also can never ring again.
+    fun dismiss(context: Context, callId: String? = null) {
+      CallRegistry.settle(context, callId)
+      // A stop for some other call must not silence the one ringing.
+      val ringing = RingService.current
+      if (callId != null && ringing != null && ringing.callId != callId) return
       RingService.stop(context)
       Ringer.stop()
+      IncomingCallActivity.close()
       (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(ID)
     }
 
-    private fun ensureChannel(nm: NotificationManager) {
-      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || nm.getNotificationChannel(CHANNEL) != null) return
+    fun ensureChannels(nm: NotificationManager) {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
       OLD_CHANNELS.forEach { nm.deleteNotificationChannel(it) }
-      val channel = NotificationChannel(CHANNEL, "Incoming calls", NotificationManager.IMPORTANCE_HIGH)
-      channel.setSound(null, null)
-      channel.enableVibration(false)
-      channel.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-      channel.setBypassDnd(true)
-      nm.createNotificationChannel(channel)
+      if (nm.getNotificationChannel(CHANNEL) == null) {
+        val channel = NotificationChannel(CHANNEL, "Incoming calls", NotificationManager.IMPORTANCE_HIGH)
+        channel.description = "Shows who is calling, with Answer and Decline"
+        channel.setSound(null, null)
+        channel.enableVibration(false)
+        channel.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        nm.createNotificationChannel(channel)
+      }
+      if (nm.getNotificationChannel(CHANNEL_IN_APP) == null) {
+        val channel = NotificationChannel(CHANNEL_IN_APP, "Incoming calls while the app is open", NotificationManager.IMPORTANCE_LOW)
+        channel.setSound(null, null)
+        channel.enableVibration(false)
+        channel.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        nm.createNotificationChannel(channel)
+      }
     }
 
-    // The call-style alert with Answer and Decline, and a full-screen call screen when locked.
-    fun buildIncomingCall(
-      context: Context,
-      title: String,
-      text: String,
-      callId: String,
-      conversationId: String,
-      video: Boolean,
-    ): Notification {
-      ensureChannel(context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-      val open = CallLinks.pending(context, "open", 1, callId, conversationId, video)
-      val answer = CallLinks.pending(context, "answer", 2, callId, conversationId, video)
-      val decline = CallLinks.pending(context, "decline", 3, callId, conversationId, video)
-      val caller = Person.Builder().setName(title).setImportant(true).build()
-      return NotificationCompat.Builder(context, CHANNEL)
+    // The call-style alert with Answer and Decline. Tapping it, and the full-screen intent
+    // on a locked phone, open the native call screen.
+    fun buildIncomingCall(context: Context, call: IncomingCall, quiet: Boolean): Notification {
+      ensureChannels(context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+      val screen = CallActions.screenPending(context, call)
+      val caller = Person.Builder().setName(call.title).setImportant(true).build()
+      val builder = NotificationCompat.Builder(context, if (quiet) CHANNEL_IN_APP else CHANNEL)
         .setSmallIcon(R.drawable.ic_notification)
-        .setContentTitle(title)
-        .setContentText(text)
-        .setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer))
+        .setContentTitle(call.title)
+        .setContentText(call.text.ifEmpty { if (call.video) "Incoming video call" else "Incoming voice call" })
+        .setStyle(
+          NotificationCompat.CallStyle.forIncomingCall(
+            caller,
+            CallActions.declinePending(context, call),
+            CallActions.answerPending(context, call),
+          ).setIsVideo(call.video),
+        )
         .setCategory(NotificationCompat.CATEGORY_CALL)
-        .setPriority(NotificationCompat.PRIORITY_MAX)
+        .setPriority(if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MAX)
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-        .setContentIntent(open)
-        .setFullScreenIntent(open, true)
+        .setContentIntent(screen)
         .setOngoing(true)
         .setAutoCancel(false)
         .setOnlyAlertOnce(true)
-        .build()
+        .setWhen(System.currentTimeMillis())
+      if (!quiet) builder.setFullScreenIntent(screen, true)
+      return builder.build()
     }
   }
 }

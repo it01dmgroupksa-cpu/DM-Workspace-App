@@ -6,6 +6,8 @@ export type MessengerStack = {
   Chat: {id: string; focus?: string};
   Info: {id: string};
   NewChat: {group?: boolean; addTo?: string};
+  // "Call check": what on this phone can stop calls ringing (Android).
+  Diagnostics: undefined;
 };
 
 // The app's NavigationContainer uses this, so a tapped notification can open a chat.

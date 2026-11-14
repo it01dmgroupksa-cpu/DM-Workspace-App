@@ -95,9 +95,14 @@ export type Call = {
   answeredAt: string | null;
   endedAt: string | null;
   endReason: 'completed' | 'missed' | 'declined' | null;
+  // The panel's one call lifecycle (lib/messenger/calls.ts). Absent from an older panel.
+  status?: 'ringing' | 'active' | 'declined' | 'missed' | 'completed';
   members: {
     user: string;
     state: 'ringing' | 'joined' | 'declined' | 'left' | 'missed';
+    // When one of their devices confirmed it is ringing (calls.ringing / the push's
+    // ackUrl). Absent from a panel that doesn't track it yet.
+    ringingAt?: string | null;
   }[];
 };
 export type Limits = {
