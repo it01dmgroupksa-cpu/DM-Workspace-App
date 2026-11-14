@@ -1,5 +1,12 @@
 {
   "name": "DM Workspace App",
+  "runtimeVersion": "1",
+  "updates": {
+    "url": "https://u.expo.dev/bef26b8d-0729-4c34-8d35-77629adcce48",
+    "checkAutomatically": "ON_LOAD",
+    "fallbackToCacheTimeout": 0,
+    "requestHeaders": { "expo-channel-name": "production" }
+  },
   "plugins": [
     "expo-audio",
     "expo-video",
