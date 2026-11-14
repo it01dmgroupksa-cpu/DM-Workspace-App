@@ -35,6 +35,11 @@ type Native = {
   fix(kind: string): void;
   testRingtone(on: boolean): void;
   testCallScreen(): void;
+  shareToWhatsApp(
+    path: string | null,
+    mime: string | null,
+    text: string | null,
+  ): Promise<number>;
   reportError(message: string, stack: string, fatal: boolean): void;
   reportEvent(message: string): void;
   setUser(id: string | null): void;
@@ -141,6 +146,16 @@ export const nativeCalls = {
   fix: (kind: string) => safely(n => n.fix(kind)),
   testRingtone: (on: boolean) => safely(n => n.testRingtone(on)),
   testCallScreen: () => safely(n => n.testCallScreen()),
+  // Forward to WhatsApp (whatsapp.ts). Missing from an app built before it (the update
+  // reached an older install): files can't be forwarded there, text still can.
+  canShareToWhatsApp: typeof native?.shareToWhatsApp === 'function',
+  // How many WhatsApp apps were offered; 0 when none is installed.
+  shareToWhatsApp: (
+    path: string | null,
+    mime: string | null,
+    text: string | null,
+  ): Promise<number> =>
+    native ? native.shareToWhatsApp(path, mime, text) : Promise.resolve(0),
   // Reports to Crashlytics (telemetry.ts).
   reportError: (message: string, stack: string, fatal: boolean) =>
     safely(n => n.reportError(message, stack, fatal)),

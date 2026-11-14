@@ -22,6 +22,7 @@ import {useMessenger} from '../store';
 import {useCalls} from '../calls';
 import type {MessengerStack} from '../navigation';
 import type {Message} from '../types';
+import {canForwardToWhatsApp, forwardToWhatsApp} from '../whatsapp';
 import {Avatar} from '../components/Avatar';
 import {Bubble} from '../components/Bubble';
 import {
@@ -335,6 +336,16 @@ export function ChatScreen({
       icon: 'arrow-redo-outline',
       onPress: () => setForwarding(m),
     });
+    // To a customer who isn't on Messenger; recorded for the monitor.
+    if (canForwardToWhatsApp(m))
+      items.push({
+        label: 'Forward to WhatsApp',
+        icon: 'logo-whatsapp',
+        onPress: () =>
+          forwardToWhatsApp(m).catch(error =>
+            Alert.alert('Forward to WhatsApp', error.message),
+          ),
+      });
     // Pins are shared by the whole chat (admins only in an admins-only group).
     if (
       m.kind !== 'system' &&

@@ -248,6 +248,19 @@ class DmCallsModule(private val context: ReactApplicationContext) : ReactContext
     promise.resolve(Telemetry.recent())
   }
 
+  // ---- Forward to WhatsApp (ChatScreen.tsx) ----
+
+  // Resolves how many WhatsApp apps were offered (0: none installed, nothing opened).
+  // path: a file in the cache "share" folder, or null for text only.
+  @ReactMethod
+  fun shareToWhatsApp(path: String?, mime: String?, text: String?, promise: Promise) {
+    try {
+      promise.resolve(WhatsAppShare.share(context, reactApplicationContext.currentActivity, path, mime, text))
+    } catch (e: Exception) {
+      promise.reject("whatsapp", e.message ?: "Couldn't open WhatsApp.", e)
+    }
+  }
+
   // ---- Reports (telemetry.ts) ----
 
   @ReactMethod
