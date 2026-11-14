@@ -186,7 +186,32 @@ export async function unregisterPush() {
 
 onBeforeSignOut(unregisterPush);
 
-type JoinCall = (call: Call, video: boolean, answer: boolean) => unknown;
+type JoinCall = (
+  call: Call,
+  video: boolean,
+  answer: boolean,
+  title?: string,
+) => unknown;
+
+// What the app knows about a call from the alert alone, enough to open its screen.
+// The real call replaces it as soon as calls.join answers.
+function callFromAlert(me: string, data: any): Call {
+  return {
+    id: data.callId,
+    conversationId: data.conversationId,
+    conversationKind:
+      messengerRef?.convs.get(data.conversationId)?.kind === 'group'
+        ? 'group'
+        : 'direct',
+    video: !!data.video,
+    startedBy: '',
+    startedAt: new Date().toISOString(),
+    answeredAt: null,
+    endedAt: null,
+    endReason: null,
+    members: [{user: me, state: 'ringing'}],
+  };
+}
 
 // Answer or decline a ringing call from a notification button. Returns true when that
 // settled it; false means "just open the chat" (already answered elsewhere, or over).
@@ -196,8 +221,20 @@ async function respondToCall(
   data: any,
   action: 'answer' | 'decline',
 ): Promise<boolean> {
-  // The panel decides whether the call can still be taken, never the push. The app may
-  // have just started (answered from the lock screen): try twice before giving up.
+  // Answer: the call screen opens straight away ("Connecting…") and joins. Nothing is
+  // checked first: calls.join itself refuses a call that is over or was answered on
+  // another device, and the call screen then says why. No waiting for Messenger to load
+  // or sync, and no need to open the chat.
+  if (action === 'answer') {
+    dismissCallNotifications(data.callId);
+    nativeCalls.stopRinging(data.callId);
+    reportEvent(`answer_opening_call_screen ${data.callId}`);
+    join(callFromAlert(me, data), !!data.video, true, data.title || undefined);
+    return true;
+  }
+  // Decline (only reaches the app without the panel's declineUrl): check the call is
+  // still ringing for me first, so a late Decline never touches a call answered
+  // elsewhere. The app may have just started: try twice before giving up.
   const live = async () =>
     (await relay<{calls: Call[]}>('calls.live')).calls;
   let calls: Call[] | null = await live().catch(() => null);
@@ -209,35 +246,18 @@ async function respondToCall(
   const mine = call?.members.find(m => m.user === me)?.state;
   dismissCallNotifications(data.callId);
   nativeCalls.stopRinging(data.callId);
-  if (action === 'decline') nativeCalls.ended(data.callId);
+  nativeCalls.ended(data.callId);
   reportEvent(
     `call_state_verified ${data.callId} ${action}: ${
       calls ? (call ? `call ${call.status ?? 'live'}, mine ${mine}` : 'over') : 'unreachable'
     }`,
   );
-  if (action === 'answer' && !(call && mine === 'ringing'))
-    Alert.alert(
-      'Call',
-      !calls
-        ? "Couldn't reach the server to answer. Check your connection."
-        : mine === 'joined'
-        ? 'You answered this call on another device.'
-        : 'This call has ended.',
-    );
-  // Still ringing for me: answer or decline it here. Already answered on another
-  // device, or over: just open the chat, never take the call over by accident.
-  if (call && mine === 'ringing') {
-    if (action === 'decline') {
-      await relay('calls.decline', {
-        callId: call.id,
-        devices: thisDevice.tokens(),
-      }).catch(() => {});
-      return true;
-    }
-    join(call, !!data.video, true);
-    return true;
-  }
-  return action === 'decline';
+  if (call && mine === 'ringing')
+    await relay('calls.decline', {
+      callId: call.id,
+      devices: thisDevice.tokens(),
+    }).catch(() => {});
+  return true;
 }
 
 // The Android call alert opens the app on dmworkspace://call?action=...&callId=...
@@ -259,6 +279,7 @@ function parseCallLink(url: string | null) {
       callId: q.callId,
       conversationId: q.conversationId,
       video: q.video === '1',
+      title: q.title || '',
     },
   };
 }
@@ -413,7 +434,7 @@ export function PushBridge() {
       if (link.action === 'answer' || link.action === 'decline') {
         const settled = await respondToCall(
           messenger.me,
-          (c, v, a) => callsRef.current.join(c, v, a),
+          (c, v, a, t) => callsRef.current.join(c, v, a, t),
           link.data,
           link.action,
         );

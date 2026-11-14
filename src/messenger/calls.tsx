@@ -63,11 +63,13 @@ type Session = {
   minimized?: boolean;
   // Someone else started it (Android's Telecom needs the direction).
   incoming?: boolean;
+  // Who is calling, from the call alert: shown until Messenger has the conversation.
+  title?: string;
 };
 type CallsApi = {
   start: (conversationId: string, video: boolean) => void;
   // answer: pressed Answer on a ringing call (refused if answered on another device).
-  join: (call: Call, video: boolean, answer?: boolean) => void;
+  join: (call: Call, video: boolean, answer?: boolean, title?: string) => void;
   current: Session | null;
 };
 const Context = createContext<CallsApi | null>(null);
@@ -230,10 +232,13 @@ export function CallProvider({children}: {children: React.ReactNode}) {
   );
 
   const join = useCallback(
-    async (call: Call, video: boolean, answer = false) => {
-      const current = ref.current?.call?.id === call.id ? ref.current : null;
+    async (given: Call, video: boolean, answer = false, title?: string) => {
+      const current = ref.current?.call?.id === given.id ? ref.current : null;
       if (ref.current && !current)
         return Alert.alert('Call', "You're already in a call.");
+      // Already showing this call (it arrived on the live stream): keep what we know of it
+      // rather than the call alert's sketch.
+      const call = current?.call ?? given;
       if (ringTimer.current) clearTimeout(ringTimer.current);
       Vibration.cancel();
       ring(false, call.id);
@@ -246,18 +251,39 @@ export function CallProvider({children}: {children: React.ReactNode}) {
         mode: 'connecting',
         video,
         incoming: call.startedBy !== me,
+        title: title ?? current?.title,
       });
-      try {
-        await permissions(video);
-        const result = await relay('calls.join', {
+      const request = () =>
+        relay('calls.join', {
           callId: call.id,
           ...(answer ? {answer: true} : {}),
           devices: thisDevice.tokens(),
         });
+      try {
+        await permissions(video);
+        let result;
+        try {
+          result = await request();
+        } catch (error: any) {
+          // Answered from the lock screen, the app only just started: the network may not
+          // be up yet. The server's own refusals (ended, answered elsewhere) aren't retried.
+          if (!answer || error?.status) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          if (now()?.key !== key) return;
+          result = await request().catch((again: any) => {
+            throw again?.status
+              ? again
+              : new Error(
+                  "Couldn't reach the server to answer. Check your connection.",
+                );
+          });
+        }
         if (now()?.key !== key)
           return relay('calls.leave', {callId: call.id}).catch(() => {});
+        reportEvent(`call_joined ${call.id}`);
         patch(key, {call: result.call, url: result.url, token: result.token});
       } catch (error: any) {
+        reportEvent(`call_join_refused ${call.id}: ${error?.message ?? 'error'}`);
         if (now()?.key === key)
           finish(error.message || "Couldn't join the call.");
       }
@@ -472,7 +498,9 @@ export function CallProvider({children}: {children: React.ReactNode}) {
   const c = s ? messenger.convs.get(s.conversationId) : null;
   const title = c
     ? convTitle(c, messenger.people)
-    : s?.call
+    : s?.title
+    ? s.title
+    : s?.call?.startedBy
     ? personOf(messenger.people, s.call.startedBy).name
     : 'Call';
   return (
@@ -486,7 +514,7 @@ export function CallProvider({children}: {children: React.ReactNode}) {
           peer={
             c?.peer
               ? personOf(messenger.people, c.peer)
-              : s.call
+              : s.call?.startedBy
               ? personOf(messenger.people, s.call.startedBy)
               : undefined
           }

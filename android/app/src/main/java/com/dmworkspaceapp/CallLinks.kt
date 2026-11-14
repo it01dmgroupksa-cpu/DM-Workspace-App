@@ -11,9 +11,12 @@ import android.net.Uri
  *
  * React Native only reports an intent's link to JavaScript when the action is VIEW, so
  * every call intent carries it; without it Answer, Decline and a tap would be ignored.
+ *
+ * `title` (who is calling) lets the call screen show the caller's name the moment the
+ * app opens, before Messenger has loaded anything.
  */
 object CallLinks {
-  fun intent(context: Context, kind: String, callId: String, conversationId: String, video: Boolean): Intent {
+  fun intent(context: Context, kind: String, callId: String, conversationId: String, video: Boolean, title: String = ""): Intent {
     val link = Uri.Builder()
       .scheme("dmworkspace")
       .authority("call")
@@ -21,6 +24,7 @@ object CallLinks {
       .appendQueryParameter("callId", callId)
       .appendQueryParameter("conversationId", conversationId)
       .appendQueryParameter("video", if (video) "1" else "0")
+      .apply { if (title.isNotEmpty()) appendQueryParameter("title", title) }
       .appendQueryParameter("t", System.currentTimeMillis().toString())
       .build()
     return Intent(context, MainActivity::class.java).apply {
@@ -31,11 +35,11 @@ object CallLinks {
     }
   }
 
-  fun pending(context: Context, kind: String, code: Int, callId: String, conversationId: String, video: Boolean): PendingIntent =
+  fun pending(context: Context, kind: String, code: Int, callId: String, conversationId: String, video: Boolean, title: String = ""): PendingIntent =
     PendingIntent.getActivity(
       context,
       code,
-      intent(context, kind, callId, conversationId, video),
+      intent(context, kind, callId, conversationId, video, title),
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 }

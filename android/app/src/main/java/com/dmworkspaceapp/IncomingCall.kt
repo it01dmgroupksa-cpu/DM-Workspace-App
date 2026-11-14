@@ -123,14 +123,15 @@ object CallActions {
 
   fun answerPending(context: Context, call: IncomingCall): PendingIntent =
     if (call.isTest) declinePending(context, call)
-    else CallLinks.pending(context, "answer", 2, call.callId, call.conversationId, call.video)
+    else CallLinks.pending(context, "answer", 2, call.callId, call.conversationId, call.video, call.title)
 
-  // Answer: stop ringing and open the app on the answer link; JavaScript joins the call.
+  // Answer: stop ringing and open the app on the answer link. JavaScript shows the call
+  // screen at once and joins; the panel refuses there if the call can't be taken.
   fun answer(context: Context, call: IncomingCall) {
     Telemetry.event("answer_pressed ${call.callId}")
     CallMessagingService.dismiss(context, call.callId)
     if (call.isTest) return
-    context.startActivity(CallLinks.intent(context, "answer", call.callId, call.conversationId, call.video))
+    context.startActivity(CallLinks.intent(context, "answer", call.callId, call.conversationId, call.video, call.title))
   }
 
   // Decline. `canOpenApp`: called from a screen the person is looking at, so opening the
