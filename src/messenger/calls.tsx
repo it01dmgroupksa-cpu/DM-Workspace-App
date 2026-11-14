@@ -850,8 +850,10 @@ function Videos() {
         <VideoTrack
           key={t.participant.identity}
           trackRef={t}
-          style={{flex: 1}}
-          objectFit="cover"
+          style={{flex: 1, backgroundColor: '#000'}}
+          // The whole picture, with bars: a laptop's wide picture filling an upright
+          // phone cut off most of it and looked zoomed in.
+          objectFit="contain"
         />
       ))}
       {local ? (
