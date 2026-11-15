@@ -184,6 +184,58 @@ test ringtone, a test call, and the phone's recent call steps to share with IT.
 - Calls need the panel's LiveKit settings (`COMPOSE_PROFILES=calls`, `LIVEKIT_*`).
 - The panel's `docs/MESSENGER-ROLLOUT.md` lists every step and command.
 
+### 6. Reports, blocking and account deletion (ERP, before the App Store build)
+
+App Store guideline 1.2 requires a chat app to let people report messages and block
+users, with the operator acting on reports within 24 hours. Guideline 5.1.1(v)
+requires a way to ask for account deletion.
+
+| Where in the app | What it does |
+| --- | --- |
+| Long-press a message → **Report** | Reason and details go to HR, with the message text |
+| Contact info → **Report _name_** | Reports the person |
+| Contact info → **Block _name_** (or after a report) | On this phone: hides their messages in every chat, mutes the direct chat on the server (no notifications), declines their calls (on iPhone CallKit ends a call in that chat even with the app closed). HR gets a "Block" record. **Unblock** in the same place |
+| More → Profile → **Request account deletion** | HR gets an "Account Deletion" record |
+
+Everything goes to one ERP Server Script, `dm_app_report` (`erp/dm_app_report.py`),
+which saves a **DM App Report**. Set it up once:
+
+1. **Doctype** (Customize → New DocType): name `DM App Report`, module HR, naming
+   `format:DMR-{#####}`, **Track Changes** on. Fields:
+
+   | Label | Fieldname | Type | Options |
+   | --- | --- | --- | --- |
+   | Report Type | `report_type` | Select | `Message` `User` `Block` `Account Deletion` (one per line); in list view |
+   | Status | `status` | Select | `Open` `Action Taken` `Dismissed` `Done`; default `Open`; in list view |
+   | Reported By | `reported_by` | Link | User; read only |
+   | Employee | `employee` | Link | Employee; read only |
+   | Reported User | `reported_user` | Data | read only; in list view |
+   | Reported Employee | `reported_employee` | Link | Employee; read only |
+   | Conversation | `conversation` | Data | read only |
+   | Message ID | `message_id` | Data | read only |
+   | Message Text | `message_text` | Small Text | read only |
+   | Reason | `reason` | Data | read only |
+   | Details | `details` | Small Text | read only |
+   | Source | `source` | Data | read only |
+   | HR Notes | `hr_notes` | Small Text | |
+
+   Permissions: **HR Manager** read/write/report. Don't give employees access. The
+   script saves with `ignore_permissions`.
+2. **Server Script** → New: type **API**, method `dm_app_report`, **Allow Guest**
+   unticked. Paste `erp/dm_app_report.py`. Server scripts must be enabled on the site
+   (`server_script_enabled`; already true, since Messenger's `durar_messenger` uses it).
+3. **Notification** → New: document type `DM App Report`, send alert on **New**,
+   recipients role **HR Manager** (email and system notification). Subject
+   `{{ doc.report_type }} report from {{ doc.reported_by }}`.
+4. **HR's 24-hour duty:** open each report and decide. For harassment and the like,
+   untick **Allow Chat Module** (or **Allow App**) on the reported Employee: Messenger
+   signs them out at their next app start. Set the status and note what was done. For
+   **Account Deletion**: disable the User and remove the app flags on the Employee,
+   delete their Messenger data in the panel, set **Done**, and tell the employee.
+
+Until the script exists, Report, Block's HR record and the deletion request fail with
+"Messenger request failed" (blocking itself still works on the phone).
+
 ## Build
 
 ```sh

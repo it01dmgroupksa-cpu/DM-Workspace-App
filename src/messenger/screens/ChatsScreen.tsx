@@ -184,6 +184,11 @@ export function ChatsScreen({
       u => u !== me,
     );
     const quiet = muted(c);
+    // Blocked: their chat says so, and their messages don't show or count.
+    const blockedChat = c.kind === 'direct' && messenger.isBlocked(c.peer);
+    const hiddenLast =
+      !!c.last && c.last.sender !== me && messenger.isBlocked(c.last.sender);
+    const unread = blockedChat ? 0 : c.unread;
     return (
       <Pressable
         style={({pressed}) => [
@@ -211,7 +216,7 @@ export function ChatsScreen({
             <Text
               style={[
                 styles.when,
-                c.unread && !quiet ? {color: BRAND.accent} : null,
+                unread && !quiet ? {color: BRAND.accent} : null,
               ]}>
               {c.last ? listTime(c.last.at) : ''}
             </Text>
@@ -220,7 +225,11 @@ export function ChatsScreen({
             <Text
               style={[styles.preview, typing && {color: BRAND.accent}]}
               numberOfLines={1}>
-              {typing ? (
+              {blockedChat ? (
+                'Blocked'
+              ) : hiddenLast ? (
+                'Message hidden'
+              ) : typing ? (
                 'typing…'
               ) : messenger.draftOf(c.id) && c.id !== messenger.state.active ? (
                 <>
@@ -244,17 +253,17 @@ export function ChatsScreen({
             {c.pinned ? (
               <Ionicons name="pin" size={14} color={BRAND.muted} />
             ) : null}
-            {c.mentioned && c.unread ? (
+            {c.mentioned && unread ? (
               <Text
                 style={styles.mentionBadge}
                 accessibilityLabel="Mentioned you">
                 @
               </Text>
             ) : null}
-            {c.unread ? (
+            {unread ? (
               <Text
                 style={[styles.badge, quiet && {backgroundColor: BRAND.muted}]}>
-                {c.unread > 99 ? '99+' : c.unread}
+                {unread > 99 ? '99+' : unread}
               </Text>
             ) : null}
           </View>

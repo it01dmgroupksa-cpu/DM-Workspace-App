@@ -23,6 +23,7 @@ import type {MessengerStack} from '../navigation';
 import type {Person} from '../types';
 import {Avatar} from '../components/Avatar';
 import {Sheet, type SheetItem} from '../components/Sheet';
+import {ReportModal, type ReportTarget} from '../components/ReportModal';
 
 type Member = {user: string; role: 'admin' | 'member'};
 
@@ -40,6 +41,7 @@ export function InfoScreen({
   const [description, setDescription] = useState(c?.description || '');
   const [memberMenu, setMemberMenu] = useState<Member | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [reporting, setReporting] = useState<ReportTarget | null>(null);
 
   const load = useCallback(() => {
     if (c?.kind !== 'group') return;
@@ -73,6 +75,35 @@ export function InfoScreen({
     messenger
       .settings(id, data)
       .catch(error => Alert.alert('Messenger', error.message));
+  // A direct chat with a colleague (not my own notes or the assistant) can be
+  // reported and blocked (App Store guideline 1.2).
+  const person =
+    c.kind === 'direct' && peer && peer.user !== ASSISTANT && peer.user !== me
+      ? peer
+      : undefined;
+  const isBlocked = !!person && messenger.isBlocked(person.user);
+  function toggleBlock() {
+    if (!person) return;
+    if (isBlocked)
+      return messenger
+        .unblock(person.user)
+        .catch(error => Alert.alert('Unblock', error.message));
+    Alert.alert(
+      `Block ${person.name}?`,
+      `You won't see messages from ${person.name} in any chat, their calls won't ring, and you won't get notifications from this chat. HR is told about the block. You can unblock them here at any time.`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () =>
+            messenger
+              .block(person.user)
+              .catch(error => Alert.alert('Block', error.message)),
+        },
+      ],
+    );
+  }
 
   // Any member can change the group's picture, not only admins.
   async function choosePhoto() {
@@ -363,6 +394,39 @@ export function InfoScreen({
               Clear messages
             </Text>
           </Pressable>
+          {person ? (
+            <Pressable
+              style={styles.action}
+              onPress={toggleBlock}
+              accessibilityLabel={
+                isBlocked ? `Unblock ${person.name}` : `Block ${person.name}`
+              }>
+              <Ionicons
+                name={isBlocked ? 'checkmark-circle-outline' : 'ban-outline'}
+                size={21}
+                color={BRAND.danger}
+              />
+              <Text style={[styles.rowText, {color: BRAND.danger}]}>
+                {isBlocked ? `Unblock ${person.name}` : `Block ${person.name}`}
+              </Text>
+            </Pressable>
+          ) : null}
+          {person ? (
+            <Pressable
+              style={styles.action}
+              onPress={() =>
+                setReporting({
+                  user: person.user,
+                  name: person.name,
+                  conversationId: id,
+                })
+              }>
+              <Ionicons name="flag-outline" size={21} color={BRAND.danger} />
+              <Text style={[styles.rowText, {color: BRAND.danger}]}>
+                Report {person.name}
+              </Text>
+            </Pressable>
+          ) : null}
           {c.kind === 'group' && !c.left ? (
             <Pressable
               style={styles.action}
@@ -388,6 +452,12 @@ export function InfoScreen({
         visible={!!memberMenu}
         onClose={() => setMemberMenu(null)}
         items={memberMenu ? memberItems(memberMenu) : []}
+      />
+      <ReportModal
+        target={reporting}
+        blocked={isBlocked}
+        onBlock={user => messenger.block(user)}
+        onClose={() => setReporting(null)}
       />
     </SafeAreaView>
   );

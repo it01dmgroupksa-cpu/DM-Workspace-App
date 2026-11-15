@@ -15,6 +15,7 @@ import PushKit
  */
 final class CallKitCenter: NSObject, PKPushRegistryDelegate, CXProviderDelegate {
   static let shared = CallKitCenter()
+  static let blockedKey = "DmCallKit.blockedConversations"
 
   weak var module: DmCallKitModule? {
     didSet {
@@ -107,6 +108,19 @@ final class CallKitCenter: NSObject, PKPushRegistryDelegate, CXProviderDelegate 
     // Apple still requires it to be reported, so report it and end it at once.
     let sentAt = (data["sentAt"] as? NSNumber)?.doubleValue ?? 0
     let late = sentAt > 0 && Date().timeIntervalSince1970 * 1000 - sentAt > 45_000
+    // A call from someone this employee blocked: report it (Apple's rule) and end it at
+    // once, declining it so the caller isn't left ringing.
+    let conversationId = data["conversationId"] as? String ?? ""
+    let blocked = (UserDefaults.standard.stringArray(forKey: CallKitCenter.blockedKey) ?? [])
+      .contains(conversationId)
+    if (data["type"] as? String) == "call" && !late && calls[uuid] == nil && blocked && !conversationId.isEmpty {
+      post(data["declineUrl"] as? String)
+      provider.reportNewIncomingCall(with: uuid, update: update) { _ in
+        self.provider.reportCall(with: uuid, endedAt: Date(), reason: .declinedElsewhere)
+        completion()
+      }
+      return
+    }
     if (data["type"] as? String) == "call" && !late && calls[uuid] == nil {
       calls[uuid] = Info(
         callId: callId,
@@ -209,6 +223,11 @@ final class CallKitCenter: NSObject, PKPushRegistryDelegate, CXProviderDelegate 
     let out = pending
     pending.removeAll()
     return out
+  }
+
+  // Kept in UserDefaults so a VoIP push that wakes a closed app already knows them.
+  func setBlockedConversations(_ ids: [String]) {
+    UserDefaults.standard.set(ids, forKey: CallKitCenter.blockedKey)
   }
 
   func has(callId: String) -> Bool {

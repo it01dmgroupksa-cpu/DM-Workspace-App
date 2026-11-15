@@ -27,6 +27,7 @@ import {
   type OutItem,
 } from './outbox';
 import {onBeforeSignOut} from './session';
+import {loadBlocked, saveBlocked, sendReport, syncBlockedCalls} from './blocks';
 import type {Call, Conversation, Limits, Message, Person} from './types';
 
 type Thread = {
@@ -60,6 +61,8 @@ export function createMessenger(me: string, render: () => void) {
   const typing = new Map<string, Map<string, ReturnType<typeof setTimeout>>>();
   const liveCalls = new Map<string, Call>();
   const hidden = new Set<string>();
+  // People this employee blocked (blocks.ts): their messages and calls stay hidden.
+  const blocked = new Set<string>();
   const callListeners = new Set<CallListener>();
   const callEvents = new Map<string, number>(); // call id -> when its last live event came
   const state = {
@@ -204,7 +207,13 @@ export function createMessenger(me: string, render: () => void) {
         deleted: m.deleted,
         at: m.createdAt,
       };
-    if (fresh && m.sender !== me && !m.deleted && m.kind !== 'system') {
+    if (
+      fresh &&
+      m.sender !== me &&
+      !m.deleted &&
+      m.kind !== 'system' &&
+      !blocked.has(m.sender)
+    ) {
       typing.get(c.id)?.delete(m.sender);
       const looking =
         state.active === c.id &&
@@ -475,12 +484,14 @@ export function createMessenger(me: string, render: () => void) {
   async function restore() {
     if (restored) return;
     restored = true;
-    const [cache, saved, queued] = await Promise.all([
+    const [cache, saved, queued, blockedList] = await Promise.all([
       loadCache(me),
       loadDrafts(me),
       loadOutbox(me),
+      loadBlocked(me),
     ]);
     if (closed) return;
+    for (const user of blockedList) blocked.add(user);
     for (const [id, text] of Object.entries(saved))
       if (text) drafts.set(id, text);
     if (cache && !state.ready) {
@@ -536,6 +547,7 @@ export function createMessenger(me: string, render: () => void) {
       for (const [id, th] of threads) if (id !== state.active) th.stale = true;
       if (state.active) loadMessages(state.active);
       for (const call of boot.calls || []) onCall(call);
+      syncBlockedCalls(blockedChats());
       state.ready = true;
       state.cached = false;
       state.error = '';
@@ -997,6 +1009,43 @@ export function createMessenger(me: string, render: () => void) {
     }
     bump();
   }
+  // ---------- blocking ----------
+  const isBlocked = (user?: string | null) => !!user && blocked.has(user);
+  // Direct chats with blocked people: CallKit ends their calls without ringing.
+  const blockedChats = () =>
+    [...convs.values()]
+      .filter(c => c.kind === 'direct' && isBlocked(c.peer))
+      .map(c => c.id);
+  const directWith = (user: string) =>
+    [...convs.values()].find(c => c.kind === 'direct' && c.peer === user);
+  async function block(user: string) {
+    if (user === me || blocked.has(user)) return;
+    blocked.add(user);
+    await saveBlocked(me, blocked);
+    const direct = directWith(user);
+    syncBlockedCalls(blockedChats());
+    // Muted on the server, so their messages stop reaching this phone as notifications.
+    if (direct)
+      settings(direct.id, {
+        mutedUntil: new Date(
+          Date.now() + 100 * 365 * 24 * 3_600_000,
+        ).toISOString(),
+      }).catch(() => {});
+    // HR sees every block next to the reports.
+    sendReport({type: 'Block', reportedUser: user, conversationId: direct?.id}).catch(
+      () => {},
+    );
+    bump();
+  }
+  async function unblock(user: string) {
+    if (!blocked.delete(user)) return;
+    await saveBlocked(me, blocked);
+    syncBlockedCalls(blockedChats());
+    const direct = directWith(user);
+    if (direct) settings(direct.id, {mutedUntil: null}).catch(() => {});
+    bump();
+  }
+
   let lastTyping = 0;
   function sendTyping(id: string) {
     if (Date.now() - lastTyping < 3000) return;
@@ -1075,6 +1124,9 @@ export function createMessenger(me: string, render: () => void) {
     markRead,
     sendTyping,
     refreshPresence,
+    isBlocked,
+    block,
+    unblock,
     setActive(id: string | null) {
       state.active = id;
       if (id) {
@@ -1148,7 +1200,11 @@ export function useMaybeMessenger() {
 export function totalUnread(m: Messenger) {
   let n = 0;
   for (const c of m.convs.values())
-    if (!(c.mutedUntil && new Date(c.mutedUntil) > new Date()) && !c.archived)
+    if (
+      !(c.mutedUntil && new Date(c.mutedUntil) > new Date()) &&
+      !c.archived &&
+      !(c.kind === 'direct' && m.isBlocked(c.peer))
+    )
       n += c.unread || 0;
   return n;
 }

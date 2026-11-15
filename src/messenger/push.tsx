@@ -31,10 +31,17 @@ const handled = new Set<string>();
 Notifications.setNotificationHandler({
   handleNotification: async n => {
     const data: any = n.request.content.data || {};
+    // Nothing from someone this employee blocked (their direct chat, or a sender the
+    // push names).
+    const c = messengerRef?.convs.get(data.conversationId);
+    const fromBlocked =
+      (c?.kind === 'direct' && !!messengerRef?.isBlocked(c.peer)) ||
+      !!messengerRef?.isBlocked(data.sender);
     const looking =
-      AppState.currentState === 'active' &&
-      (data.type === 'call' ||
-        messengerRef?.state.active === data.conversationId);
+      fromBlocked ||
+      (AppState.currentState === 'active' &&
+        (data.type === 'call' ||
+          messengerRef?.state.active === data.conversationId));
     return {
       shouldShowBanner: !looking,
       shouldShowList: !looking,

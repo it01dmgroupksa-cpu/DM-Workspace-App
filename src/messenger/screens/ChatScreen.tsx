@@ -34,6 +34,7 @@ import {MediaViewer} from '../components/MediaViewer';
 import {Picker, type Target} from '../components/Picker';
 import {Sheet, type SheetItem} from '../components/Sheet';
 import {ConnectionBar} from '../components/ConnectionBar';
+import {ReportModal, type ReportTarget} from '../components/ReportModal';
 
 type Row = {
   key: string;
@@ -62,6 +63,7 @@ export function ChatScreen({
   const [menuFor, setMenuFor] = useState<Message | null>(null);
   const [viewing, setViewing] = useState<Message | null>(null);
   const [forwarding, setForwarding] = useState<Message | null>(null);
+  const [reporting, setReporting] = useState<ReportTarget | null>(null);
   const [info, setInfo] = useState<{m: Message; members: any[]} | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
@@ -129,6 +131,8 @@ export function ChatScreen({
         theirs[Math.max(0, theirs.length - openUnread.current)]?.id || null;
     }
     for (const m of th.list) {
+      // Messages from people I blocked are hidden.
+      if (m.sender !== me && messenger.isBlocked(m.sender)) continue;
       const d = new Date(m.createdAt).toDateString();
       if (d !== day) {
         day = d;
@@ -215,7 +219,10 @@ export function ChatScreen({
     : peer
     ? lastSeen(peer)
     : '';
-  const blocked = c.left
+  const peerBlocked = c.kind === 'direct' && messenger.isBlocked(c.peer);
+  const blocked = peerBlocked
+    ? `You blocked ${title}. Unblock them in contact info to send messages.`
+    : c.left
     ? "You're no longer a member of this group."
     : c.onlyAdminsSend && c.role !== 'admin'
     ? 'Only admins can send messages.'
@@ -402,6 +409,20 @@ export function ChatScreen({
         label: 'Message info',
         icon: 'information-circle-outline',
         onPress: () => showInfo(m),
+      });
+    // Someone else's message: report it to HR (App Store guideline 1.2).
+    if (!mine && m.kind !== 'system' && !m.deleted && m.sender !== ASSISTANT)
+      items.push({
+        label: 'Report',
+        icon: 'flag-outline',
+        danger: true,
+        onPress: () =>
+          setReporting({
+            user: m.sender,
+            name: personOf(messenger.people, m.sender).name,
+            conversationId: id,
+            message: m,
+          }),
       });
     items.push({
       label: 'Delete for me',
@@ -747,6 +768,12 @@ export function ChatScreen({
         onClose={() => setViewing(null)}
       />
       <ForwardModal message={forwarding} onClose={() => setForwarding(null)} />
+      <ReportModal
+        target={reporting}
+        blocked={!!reporting && messenger.isBlocked(reporting.user)}
+        onBlock={user => messenger.block(user)}
+        onClose={() => setReporting(null)}
+      />
 
       <Modal
         visible={!!results}

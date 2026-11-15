@@ -552,7 +552,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = DMWorkspaceApp/DMWorkspaceApp.entitlements;
-				CURRENT_PROJECT_VERSION = 2026111403;
+				CURRENT_PROJECT_VERSION = 2026111404;
 				DEVELOPMENT_TEAM = Q48Q342BWL;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = DMWorkspaceApp/Info.plist;
@@ -560,14 +560,14 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 2.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.dmworkspaceapp;
+				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.example.DMAppTests;
 				PRODUCT_NAME = DMWorkspaceApp;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -582,21 +582,21 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = DMWorkspaceApp/DMWorkspaceApp.entitlements;
-				CURRENT_PROJECT_VERSION = 2026111403;
+				CURRENT_PROJECT_VERSION = 2026111404;
 				DEVELOPMENT_TEAM = Q48Q342BWL;
 				INFOPLIST_FILE = DMWorkspaceApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 2.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.dmworkspaceapp;
+				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.example.DMAppTests;
 				PRODUCT_NAME = DMWorkspaceApp;
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";

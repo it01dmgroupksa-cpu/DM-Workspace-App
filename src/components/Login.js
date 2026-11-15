@@ -157,6 +157,9 @@ const handleLogin = async (
         <Image source={require('./images/dmlogo.png')} style={styles.logo} />
         <Text style={styles.welcomeText}>Welcome Back</Text>
         <Text style={styles.subText}>Please sign in to continue</Text>
+        <Text style={styles.audienceText}>
+          For DM Group employees. Accounts are provided by HR.
+        </Text>
 
         <View style={styles.inputContainer}>
           <UserAppIcon width={24} height={24} stroke="#103BA9" />
@@ -278,7 +281,13 @@ const styles = StyleSheet.create({
   subText: {
     fontSize: 16,
     color: '#666',
-    marginBottom: 30,
+    marginBottom: 8,
+  },
+  audienceText: {
+    fontSize: 13,
+    color: '#888',
+    textAlign: 'center',
+    marginBottom: 24,
   },
   inputContainer: {
     flexDirection: 'row',

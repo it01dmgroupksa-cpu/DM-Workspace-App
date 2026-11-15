@@ -301,12 +301,31 @@ export function CallProvider({children}: {children: React.ReactNode}) {
 
   // Calls arrive on the live stream (or from the push that opened the app).
   const earlyEvents = useRef(new Map<string, Call>());
+  const blockedDeclined = useRef(new Set<string>());
   const onEvent = useRef<(call: Call) => void>(() => {});
   useEffect(() => {
     if (!messenger) return;
     const handle = (call: Call) => {
       const current = ref.current;
       const mine = call.members.find(m => m.user === me)?.state;
+      // A call from someone I blocked: decline it without ringing (once per call).
+      if (
+        !call.endedAt &&
+        call.startedBy !== me &&
+        mine === 'ringing' &&
+        messenger.isBlocked(call.startedBy)
+      ) {
+        if (current?.call?.id === call.id) finish(undefined, 'calls.decline');
+        else if (!blockedDeclined.current.has(call.id)) {
+          blockedDeclined.current.add(call.id);
+          callKit.endCall(call.id);
+          void relay('calls.decline', {
+            callId: call.id,
+            devices: thisDevice.tokens(),
+          }).catch(() => {});
+        }
+        return;
+      }
       // Our own call starting, before calls.start answered with its id.
       if (
         current &&

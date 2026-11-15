@@ -93,6 +93,9 @@ export function SignInScreen({standalone}: {standalone?: boolean}) {
             in for {SESSION_DAYS} days, even when you sign out of the other
             tabs.
           </Text>
+          <Text style={styles.sub}>
+            For DM Group employees. Accounts are provided by HR.
+          </Text>
           {notice ? <Text style={styles.notice}>{notice}</Text> : null}
           <TextInput
             style={styles.input}

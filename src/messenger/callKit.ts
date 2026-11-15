@@ -18,6 +18,8 @@ type Module = {
   answered(callId: string): void;
   reportConnected(callId: string): void;
   endCall(callId: string): void;
+  // Missing from builds before 2026111404: `safely` turns that into a no-op.
+  setBlockedConversations(ids: string[]): void;
   addListener(
     event: string,
     listener: (body: any) => void,
@@ -48,6 +50,8 @@ export const callKit = {
   reportConnected: (callId: string) =>
     safely(m => m.reportConnected(callId), undefined),
   endCall: (callId: string) => safely(m => m.endCall(callId), undefined),
+  setBlockedConversations: (ids: string[]) =>
+    safely(m => m.setBlockedConversations(ids), undefined),
   onToken: (listener: (token: string) => void) =>
     safely(
       m => m.addListener('DmCallKitToken', body => listener(body.token)),

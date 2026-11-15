@@ -7,12 +7,44 @@ import {
   TouchableOpacity,
   Modal,
   Image,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { EmployeeContext } from '../context/EmployeeContext';
 import { useNavigation } from '@react-navigation/native';
+import { requestAccountDeletion } from '../../api';
 
 const EmployeeProfile = () => {
   const { employeeDetails} = useContext(EmployeeContext);
+  const [deleting, setDeleting] = useState(false);
+
+  // Accounts come from HR, so deletion is a request HR carries out in ERP.
+  const confirmDeletion = () =>
+    Alert.alert(
+      'Request account deletion?',
+      'HR will delete your DM Workspace app and Messenger account and the data the app keeps for it, within 30 days. HR may contact you to confirm. Records the company must keep by law (for example payroll and attendance) are kept as the law requires.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Request deletion', style: 'destructive', onPress: sendDeletion },
+      ],
+    );
+  const sendDeletion = async () => {
+    setDeleting(true);
+    try {
+      await requestAccountDeletion(employeeDetails.name);
+      Alert.alert(
+        'Request sent',
+        'HR has received your request to delete your account. You will be notified when it is done.',
+      );
+    } catch (error) {
+      Alert.alert(
+        'Request not sent',
+        'The request could not be sent. Check your connection and try again, or email itadmin@dmgroupksa.com.',
+      );
+    } finally {
+      setDeleting(false);
+    }
+  };
 
 
   const renderRow = (label, value) => (
@@ -98,6 +130,19 @@ const EmployeeProfile = () => {
         {renderRow('Current Address', employeeDetails.current_address)}
         {renderRow('Accommodation Type', employeeDetails.current_accommodation_type)}
       </View>
+
+      {/* Account */}
+      <TouchableOpacity
+        style={[styles.logoutButton, deleting && { opacity: 0.6 }]}
+        onPress={confirmDeletion}
+        disabled={deleting}
+        accessibilityRole="button">
+        {deleting ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <Text style={styles.logoutButtonText}>Request account deletion</Text>
+        )}
+      </TouchableOpacity>
 
     </ScrollView>
   );

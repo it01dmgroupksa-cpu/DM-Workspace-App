@@ -1855,6 +1855,19 @@ export const postPersonalEmployeeDetails = async (employeeName) => {
   }
 };
 
+// Asks HR to delete the signed-in employee's app account (App Store guideline
+// 5.1.1(v)). Goes to the ERP Server Script `dm_app_report` as a "DM App Report" of
+// type "Account Deletion" (see MESSENGER.md).
+export const requestAccountDeletion = async (employeeName, details = '') => {
+  const response = await api.post('dm_app_report', {
+    type: 'Account Deletion',
+    employee: employeeName,
+    details: String(details).slice(0, 2000),
+    source: 'Profile',
+  });
+  return response.data;
+};
+
 
 
 export const getUnitOptions = async () => {

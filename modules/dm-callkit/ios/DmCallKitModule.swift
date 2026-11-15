@@ -46,6 +46,11 @@ public class DmCallKitModule: Module {
       CallKitCenter.shared.reportConnected(callId: callId)
     }
 
+    // Direct chats with people this employee blocked: their calls end without ringing.
+    Function("setBlockedConversations") { (ids: [String]) in
+      CallKitCenter.shared.setBlockedConversations(ids)
+    }
+
     Function("endCall") { (callId: String) in
       CallKitCenter.shared.endFromApp(callId: callId)
     }
