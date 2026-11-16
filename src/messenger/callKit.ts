@@ -20,6 +20,8 @@ type Module = {
   endCall(callId: string): void;
   // Missing from builds before 2026111404: `safely` turns that into a no-op.
   setBlockedConversations(ids: string[]): void;
+  // Video calls' "Touch up"; missing from builds before it.
+  setBeauty?(on: boolean): void;
   addListener(
     event: string,
     listener: (body: any) => void,
@@ -52,6 +54,8 @@ export const callKit = {
   endCall: (callId: string) => safely(m => m.endCall(callId), undefined),
   setBlockedConversations: (ids: string[]) =>
     safely(m => m.setBlockedConversations(ids), undefined),
+  beautyAvailable: typeof native?.setBeauty === 'function',
+  setBeauty: (on: boolean) => safely(m => m.setBeauty?.(on), undefined),
   onToken: (listener: (token: string) => void) =>
     safely(
       m => m.addListener('DmCallKitToken', body => listener(body.token)),

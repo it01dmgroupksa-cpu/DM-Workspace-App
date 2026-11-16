@@ -32,6 +32,8 @@ class MainApplication : Application(), ReactApplication {
     Telemetry.attach(this)
     // Messenger calls: must run before React Native loads.
     LiveKitReactNative.setup(this, AudioType.CommunicationAudioType())
+    // "Touch up" skin smoothing, offered to the call screen as the video effect "dm-beauty".
+    BeautyProcessor.register()
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (error: IllegalArgumentException) {

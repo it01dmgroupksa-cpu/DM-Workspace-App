@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">DM Workspace App</string>
-    <string name="expo_runtime_version">1</string>
+    <string name="expo_runtime_version">2</string>
 </resources>

@@ -39,6 +39,9 @@ object CallTelecom {
     @Volatile var answered = false
     @Volatile var ended = false
     @Volatile var endpoints: List<CallEndpointCompat> = emptyList()
+    @Volatile var current: CallEndpointCompat? = null
+    // The Speaker button's choice; null until it is pressed (the system's own default).
+    @Volatile var speaker: Boolean? = null
     val done = CompletableDeferred<Unit>()
   }
 
@@ -92,7 +95,20 @@ object CallTelecom {
           onSetInactive = {},
         ) {
           live.control = this
-          launch { availableEndpoints.collect { live.endpoints = it } }
+          launch {
+            availableEndpoints.collect {
+              live.endpoints = it
+              keepRoute(live)
+            }
+          }
+          // Telecom picks its own route when the call is answered or goes active (the
+          // earpiece for a voice call): put back the person's choice.
+          launch {
+            currentCallEndpoint.collect {
+              live.current = it
+              keepRoute(live)
+            }
+          }
           // Ended before Telecom was ready: end it now.
           if (live.ended) launch { disconnect(DisconnectCause(DisconnectCause.LOCAL)) }
           launch { live.done.await() }
@@ -120,6 +136,7 @@ object CallTelecom {
         if (live.incoming)
           control.answer(if (live.video) CallAttributesCompat.CALL_TYPE_VIDEO_CALL else CallAttributesCompat.CALL_TYPE_AUDIO_CALL)
         else control.setActive()
+        keepRoute(live)
       } catch (e: Exception) {
       }
     }
@@ -145,15 +162,34 @@ object CallTelecom {
     }
   }
 
-  // Mirrors the Speaker button, so the system routes the sound the same way.
+  // Mirrors the Speaker button, so the system routes the sound the same way. Remembered for
+  // the call: pressed while still ringing out, it holds once the other person answers.
   fun setSpeaker(on: Boolean) {
-    val live = calls.values.firstOrNull { it.answered } ?: return
+    val live = calls.values.firstOrNull { it.answered && !it.ended }
+      ?: calls.values.firstOrNull { !it.ended }
+      ?: return
+    live.speaker = on
+    Telemetry.event("speaker ${if (on) "on" else "off"}")
+    keepRoute(live, force = true)
+  }
+
+  // Speaker or earpiece as chosen. A headset or Bluetooth the person switched to is left
+  // alone: only the phone's own speaker and earpiece are swapped.
+  private fun keepRoute(live: Live, force: Boolean = false) {
+    val on = live.speaker ?: return
+    val control = live.control ?: return
     val wanted = if (on) CallEndpointCompat.TYPE_SPEAKER else CallEndpointCompat.TYPE_EARPIECE
+    val now = live.current?.type
+    if (now == wanted) return
+    if (!force && now != null && now != CallEndpointCompat.TYPE_SPEAKER && now != CallEndpointCompat.TYPE_EARPIECE) return
     val endpoint = live.endpoints.firstOrNull { it.type == wanted } ?: return
     scope.launch {
       try {
-        live.control?.requestEndpointChange(endpoint)
+        val result = control.requestEndpointChange(endpoint)
+        if (result !is androidx.core.telecom.CallControlResult.Success)
+          Telemetry.event("speaker switch refused: $result")
       } catch (e: Exception) {
+        Telemetry.problem("speaker switch failed", e)
       }
     }
   }

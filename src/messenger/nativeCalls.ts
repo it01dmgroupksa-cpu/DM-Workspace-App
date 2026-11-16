@@ -27,6 +27,7 @@ type Native = {
   deviceId(): Promise<string>;
   callEvents(): Promise<string>;
   setSpeaker(on: boolean): void;
+  setBeauty?(on: boolean): void;
   setProximity(on: boolean): void;
   setPip(on: boolean): void;
   batteryExempt(): Promise<boolean>;
@@ -125,6 +126,14 @@ export const nativeCalls = {
     }
   },
   setSpeaker: (on: boolean) => safely(n => n.setSpeaker(on)),
+  // Video calls' "Touch up" skin smoothing (BeautyProcessor.kt / DmBeautyProcessor.m), a
+  // camera effect named "dm-beauty". Missing from builds made before it: no button then.
+  beautyAvailable:
+    typeof native?.setBeauty === 'function' || callKit.beautyAvailable,
+  setBeauty: (on: boolean) => {
+    safely(n => n.setBeauty?.(on));
+    callKit.setBeauty(on);
+  },
   setProximity: (on: boolean) => safely(n => n.setProximity(on)),
   setPip: (on: boolean) => safely(n => n.setPip(on)),
   batteryExempt: async () => {

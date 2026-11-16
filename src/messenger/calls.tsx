@@ -37,7 +37,14 @@ import {
   useRoomContext,
   useTracks,
 } from '@livekit/react-native';
-import {Track, type LocalVideoTrack} from 'livekit-client';
+import {
+  Track,
+  TrackEvent,
+  VideoPresets,
+  type LocalVideoTrack,
+  type RoomOptions,
+} from 'livekit-client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {relay} from './api';
 import {BRAND, RING_SECONDS} from './config';
 import {clock, convTitle, personOf} from './format';
@@ -75,6 +82,30 @@ type CallsApi = {
 const Context = createContext<CallsApi | null>(null);
 export const useCalls = () => useContext(Context)!;
 let keys = 0;
+
+// Video at the best the camera and the connection allow: the camera at up to 1080p and
+// 30 fps, sent with 720p and 360p copies so a weak connection or a small window gets a
+// smaller one instead of a frozen picture (LiveKit picks per viewer).
+const CAMERA = {resolution: VideoPresets.h1080.resolution};
+const ROOM_OPTIONS: RoomOptions = {
+  adaptiveStream: {pixelDensity: 'screen'},
+  dynacast: true,
+  videoCaptureDefaults: CAMERA,
+  publishDefaults: {
+    videoEncoding: {maxBitrate: 3_500_000, maxFramerate: 30},
+    videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h720],
+  },
+};
+
+// "Touch up" (skin smoothing) on video calls: on unless the person switched it off; the
+// choice is kept for the next call.
+const TOUCH_UP_KEY = 'dm.call.touchUp';
+let touchUpChoice = true;
+AsyncStorage.getItem(TOUCH_UP_KEY)
+  .then(v => {
+    if (v != null) touchUpChoice = v === '1';
+  })
+  .catch(() => {});
 
 // LiveKit's DisconnectReason values (livekit/protocol).
 const CLIENT_INITIATED = 1;
@@ -646,8 +677,8 @@ function CallView(p: ViewProps) {
         token={s.token}
         connect={audioReady}
         audio
-        video={s.video ? {facingMode: 'user'} : false}
-        options={{adaptiveStream: {pixelDensity: 'screen'}}}
+        video={s.video ? {facingMode: 'user', ...CAMERA} : false}
+        options={ROOM_OPTIONS}
         onConnected={() => {
           reportEvent(`livekit_connected ${s.call?.id ?? ''}`);
           p.onConnected();
@@ -831,7 +862,11 @@ function Stage({
           </Pressable>
         </View>
       ) : s.url ? (
-        <Controls video={s.video} onHangUp={onHangUp} />
+        <Controls
+          video={s.video}
+          active={s.mode === 'active'}
+          onHangUp={onHangUp}
+        />
       ) : (
         <View style={styles.actions}>
           <Pressable
@@ -888,22 +923,32 @@ function Videos() {
   );
 }
 
-function Controls({video, onHangUp}: {video: boolean; onHangUp: () => void}) {
+function Controls({
+  video,
+  active,
+  onHangUp,
+}: {
+  video: boolean;
+  active: boolean;
+  onHangUp: () => void;
+}) {
   const {localParticipant, isMicrophoneEnabled, isCameraEnabled, cameraTrack} =
     useLocalParticipant();
+  const remoteCount = useRemoteParticipants().length;
   const [speaker, setSpeaker] = useState(video);
   const [flipping, setFlipping] = useState(false);
+  const [touchUp, setTouchUp] = useState(touchUpChoice);
   const side = useFacing();
+  const camera = cameraTrack?.track as LocalVideoTrack | undefined;
   useEffect(() => {
     setFacing('user');
   }, []); // each call starts on the front camera
   async function flip() {
-    const track = cameraTrack?.track as LocalVideoTrack | undefined;
-    if (!track || flipping) return;
+    if (!camera || flipping) return;
     const next: Facing = side === 'user' ? 'environment' : 'user';
     setFlipping(true);
     try {
-      await track.restartTrack({facingMode: next});
+      await camera.restartTrack({facingMode: next, ...CAMERA});
       setFacing(next);
     } catch {
       Alert.alert('Camera', "Couldn't switch the camera.");
@@ -911,21 +956,70 @@ function Controls({video, onHangUp}: {video: boolean; onHangUp: () => void}) {
       setFlipping(false);
     }
   }
+
+  // Speaker or earpiece. The phone's own call handling (Telecom on Android, CallKit on
+  // iPhone) resets the route when the call is answered and when someone joins, so a
+  // choice made while it was still ringing is put back then.
+  const chosen = useRef<boolean | null>(null);
+  const route = useCallback(
+    async (on: boolean) => {
+      const output =
+        Platform.OS === 'ios'
+          ? on
+            ? 'force_speaker'
+            : 'default'
+          : on
+          ? 'speaker'
+          : 'earpiece';
+      await AudioSession.selectAudioOutput(output).catch(error =>
+        reportEvent(`speaker switch failed: ${error?.message ?? error}`),
+      );
+      nativeCalls.setSpeaker(on);
+      // On the speaker the phone isn't at the ear: keep the screen on.
+      if (!video) nativeCalls.setProximity(!on);
+    },
+    [video],
+  );
   async function toggleSpeaker() {
     const next = !speaker;
+    chosen.current = next;
     setSpeaker(next);
-    const output =
-      Platform.OS === 'ios'
-        ? next
-          ? 'force_speaker'
-          : 'default'
-        : next
-        ? 'speaker'
-        : 'earpiece';
-    await AudioSession.selectAudioOutput(output).catch(() => {});
-    nativeCalls.setSpeaker(next);
-    // On the speaker the phone isn't at the ear: keep the screen on.
-    if (!video) nativeCalls.setProximity(!next);
+    await route(next);
+  }
+  useEffect(() => {
+    if (chosen.current === null || (!active && !remoteCount)) return;
+    const on = chosen.current;
+    const t = setTimeout(() => route(on), 500);
+    return () => clearTimeout(t);
+  }, [active, remoteCount, route]);
+
+  // Touch up: the camera carries the "dm-beauty" effect, switched on and off natively;
+  // a new camera track (switched camera, camera back on) gets it again.
+  useEffect(() => {
+    nativeCalls.setBeauty(touchUp);
+  }, [touchUp]);
+  useEffect(() => {
+    if (!nativeCalls.beautyAvailable || !camera) return;
+    const apply = () => {
+      try {
+        (camera.mediaStreamTrack as any)?._setVideoEffects?.(['dm-beauty']);
+      } catch (error: any) {
+        reportEvent(`touch up failed: ${error?.message ?? error}`);
+      }
+    };
+    apply();
+    camera.on(TrackEvent.Restarted, apply);
+    camera.on(TrackEvent.Unmuted, apply);
+    return () => {
+      camera.off(TrackEvent.Restarted, apply);
+      camera.off(TrackEvent.Unmuted, apply);
+    };
+  }, [camera]);
+  function toggleTouchUp() {
+    const next = !touchUp;
+    touchUpChoice = next;
+    setTouchUp(next);
+    AsyncStorage.setItem(TOUCH_UP_KEY, next ? '1' : '0').catch(() => {});
   }
   const button = (
     icon: React.ComponentProps<typeof Ionicons>['name'],
@@ -964,6 +1058,9 @@ function Controls({video, onHangUp}: {video: boolean; onHangUp: () => void}) {
       )}
       {isCameraEnabled
         ? button('camera-reverse', 'Switch camera', flipping, flip)
+        : null}
+      {isCameraEnabled && nativeCalls.beautyAvailable
+        ? button('sparkles', 'Touch up', touchUp, toggleTouchUp)
         : null}
       {button('volume-high', 'Speaker', speaker, toggleSpeaker)}
       <Pressable
@@ -1027,10 +1124,11 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     paddingVertical: 12,
   },
+  // Six buttons on a video call (with Touch up) still fit a 360-wide phone.
   ctl: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',

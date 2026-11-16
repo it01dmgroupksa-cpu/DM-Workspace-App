@@ -96,6 +96,12 @@ class DmCallsModule(private val context: ReactApplicationContext) : ReactContext
     CallTelecom.setSpeaker(on)
   }
 
+  // Video calls' "Touch up" (BeautyProcessor): on or off for the camera, live.
+  @ReactMethod
+  fun setBeauty(on: Boolean) {
+    BeautyProcessor.enabled = on
+  }
+
   // Voice calls on the earpiece: the screen goes dark at the ear, so a cheek can't
   // press Mute or Hang up.
   @ReactMethod

@@ -14,7 +14,9 @@ Pod::Spec.new do |s|
   # LiveKit's WebRTC build (already in the app through @livekit/react-native-webrtc):
   # CallKit hands the activated audio session to it.
   s.dependency 'LiveKitWebRTC'
-  s.frameworks = 'CallKit', 'PushKit', 'AVFoundation'
+  # Video calls' "Touch up" (DmBeautyProcessor.m) registers as a WebRTC video effect.
+  s.dependency 'livekit-react-native-webrtc'
+  s.frameworks = 'CallKit', 'PushKit', 'AVFoundation', 'CoreImage', 'CoreVideo'
 
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
   s.source_files = '**/*.{h,m,mm,swift}'

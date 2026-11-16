@@ -54,6 +54,11 @@ public class DmCallKitModule: Module {
     Function("endCall") { (callId: String) in
       CallKitCenter.shared.endFromApp(callId: callId)
     }
+
+    // Video calls' "Touch up" (DmBeautyProcessor.m), which reads this switch.
+    Function("setBeauty") { (on: Bool) in
+      UserDefaults.standard.set(on, forKey: "dm.beauty")
+    }
   }
 
   func emit(_ name: String, _ body: [String: Any]) {
