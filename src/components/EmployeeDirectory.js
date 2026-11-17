@@ -1,7 +1,23 @@
 import React, { useState, useEffect, useContext, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Linking } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Modal, Linking, Alert, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getAllEmployeesDir } from '../../api';
 import { EmployeeContext } from '../context/EmployeeContext'; // Importing EmployeeContext
+import { useMaybeMessenger } from '../messenger/store';
+import { useCalls } from '../messenger/calls';
+
+// The employee's Messenger account: by employee number, else by company email (the ERP
+// login).
+function messengerUserOf(messenger, employee) {
+  if (!messenger || !employee) return null;
+  const people = [...messenger.people.values()];
+  const email = (employee.company_email || '').trim().toLowerCase();
+  return (
+    people.find(p => p.employee && p.employee === employee.employee_id) ||
+    (email ? people.find(p => (p.user || '').toLowerCase() === email) : null) ||
+    null
+  );
+}
 
 const EmployeeDirectory = () => {
   const [employees, setEmployees] = useState([]); // Store all employee details
@@ -16,6 +32,9 @@ const EmployeeDirectory = () => {
 
   const { employeeDetails } = useContext(EmployeeContext); // Access the logged-in employee's details
   const loggedInEmployeeId = employeeDetails.name; // This is the employee_id of the logged-in user
+  const messenger = useMaybeMessenger();
+  const calls = useCalls();
+  const [calling, setCalling] = useState(false);
 
   useEffect(() => {
     fetchEmployees();
@@ -80,7 +99,42 @@ const EmployeeDirectory = () => {
   };
 
   const handlePhonePress = (phoneNumber) => {
-    Linking.openURL(`tel:${phoneNumber}`);
+    const number = String(phoneNumber || '').replace(/[^\d+]/g, '');
+    if (!number) {
+      Alert.alert('Call on phone', 'No company phone number is saved for this employee.');
+      return;
+    }
+    Linking.openURL(`tel:${number}`).catch(() =>
+      Alert.alert('Call on phone', "This device can't make phone calls."),
+    );
+  };
+
+  // A Messenger voice call, straight from the directory: opens (or reuses) the direct chat
+  // and rings the employee's phones and Messenger windows.
+  const handleMessengerCall = async (employee) => {
+    if (!messenger || !calls) {
+      Alert.alert('Call on Messenger', 'Sign in to Messenger first (the Chat tab).');
+      return;
+    }
+    if (calls.current) {
+      Alert.alert('Call on Messenger', 'You are already in a call.');
+      return;
+    }
+    const person = messengerUserOf(messenger, employee);
+    if (!person) {
+      Alert.alert('Call on Messenger', `${employee.employee_name} isn't on Messenger yet.`);
+      return;
+    }
+    setCalling(true);
+    try {
+      const conversationId = await messenger.openDirect(person.user);
+      handleCloseModal();
+      calls.start(conversationId, false);
+    } catch (error) {
+      Alert.alert('Call on Messenger', error?.message || "Couldn't start the call. Try again.");
+    } finally {
+      setCalling(false);
+    }
   };
 
   const handleEmailPress = (email) => {
@@ -206,6 +260,27 @@ const EmployeeDirectory = () => {
                 <Text style={styles.modalText} onPress={() => handleEmailPress(selectedEmployee.company_email)}>
                   <Text style={styles.modalLabel}>Company Email:</Text> {selectedEmployee.company_email}
                 </Text>
+                <View style={styles.callRow}>
+                  <TouchableOpacity
+                    style={[styles.callButton, styles.phoneButton]}
+                    onPress={() => handlePhonePress(selectedEmployee.cell_number)}
+                    accessibilityLabel="Call on phone">
+                    <Ionicons name="call" size={18} color="#FFFFFF" />
+                    <Text style={styles.callButtonText}>Call on phone</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.callButton, styles.messengerButton, calling && styles.disabledButton]}
+                    onPress={() => handleMessengerCall(selectedEmployee)}
+                    disabled={calling}
+                    accessibilityLabel="Call on Messenger">
+                    {calling ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Ionicons name="chatbubbles" size={18} color="#FFFFFF" />
+                    )}
+                    <Text style={styles.callButtonText}>Call on Messenger</Text>
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity
                   style={styles.modalCloseButton}
                   onPress={handleCloseModal}>
@@ -377,12 +452,38 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#103BA9',
   },
+  callRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  callButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  phoneButton: {
+    backgroundColor: '#16a34a',
+  },
+  messengerButton: {
+    backgroundColor: '#0e7490',
+  },
+  callButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
   modalCloseButton: {
     backgroundColor: '#103BA9',
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
