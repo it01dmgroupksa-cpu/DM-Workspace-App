@@ -1,6 +1,7 @@
 PODS:
   - DmCallKit (1.0.0):
     - ExpoModulesCore
+    - livekit-react-native-webrtc
     - LiveKitWebRTC
   - EASClient (57.0.5):
     - ExpoModulesCore
@@ -2853,7 +2854,7 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  DmCallKit: 21f1a043c1c0b15255f13d3b797f0be96d6cc5fe
+  DmCallKit: bb161603f093405488939980e239a8fe9ef9d72a
   EASClient: c0ccc7ee5d3da785fbbd8c87b881d151a7428742
   EXApplication: a727f05eb8592f0bc764f6ab8d51eacc158652ec
   EXConstants: 8a0eb5e2553569c0e6710b73a8d90d1ce358c153

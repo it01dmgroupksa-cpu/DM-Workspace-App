@@ -110,7 +110,17 @@ jest.mock('expo-notifications', () => ({
 
 jest.mock('react-native-sse', () => jest.fn());
 
-jest.mock('livekit-client', () => ({Track: {Source: {Camera: 'camera'}}}));
+jest.mock('livekit-client', () => {
+  const preset = (width, height) => ({resolution: {width, height}});
+  return {
+    Track: {Source: {Camera: 'camera'}},
+    VideoPresets: {
+      h360: preset(640, 360),
+      h720: preset(1280, 720),
+      h1080: preset(1920, 1080),
+    },
+  };
+});
 
 jest.mock('@livekit/react-native', () => ({
   registerGlobals: jest.fn(),
