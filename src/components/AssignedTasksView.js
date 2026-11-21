@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import React, { useState, useContext, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,9 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { EmployeeContext } from '../context/EmployeeContext';
-import { getAssignedTasks, getTaskDetails, updateTaskDetail } from '../../api';
+import { getAssignedTasks, getTaskDetails, updateTaskDetail, getTaskMeta, erpErrorMessage } from '../../api';
 import TaskDescription from './TaskDescription';
 
 const AssignedTasksView = () => {
@@ -18,6 +18,8 @@ const AssignedTasksView = () => {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [scrollEnabled, setScrollEnabled] = useState(true); // To handle scroll interaction
+  const [descField, setDescField] = useState('task_description');
+  const [loadError, setLoadError] = useState(null);
   const navigation = useNavigation();
 
   const fetchTasks = useCallback(async () => {
@@ -28,28 +30,37 @@ const AssignedTasksView = () => {
 
     try {
       setLoading(true);
-      const assignedTasks = await getAssignedTasks(employeeDetails.name);
-      const tasksWithDetails = await Promise.all(
-        assignedTasks.map(async task => {
-          const details = await getTaskDetails(task.name);
-          return { ...task, ...details };
-        }),
+      setLoadError(null);
+      const meta = await getTaskMeta();
+      if (meta && meta.descField) setDescField(meta.descField);
+      const assignedTasks = (await getAssignedTasks(employeeDetails.name)) || [];
+      // One task that can't be opened must not hide all the others.
+      const results = await Promise.allSettled(
+        assignedTasks.map(task => getTaskDetails(task.name)),
+      );
+      const tasksWithDetails = assignedTasks.map((task, i) =>
+        results[i].status === 'fulfilled' ? { ...task, ...results[i].value } : task,
       );
       const sortedTasks = tasksWithDetails.sort(
-        (a, b) => new Date(b.date) - new Date(a.date),
+        (a, b) => new Date(b.date || 0) - new Date(a.date || 0),
       );
       setTasks(sortedTasks);
     } catch (error) {
-      Alert.alert('Error', 'Failed to fetch tasks. Please try again later.');
+      const msg = erpErrorMessage(error, 'Failed to fetch tasks. Please try again later.');
+      setLoadError(msg);
+      Alert.alert('Error', msg);
       console.error("Error fetching tasks:");
     } finally {
       setLoading(false);
     }
   }, [employeeDetails?.name]);
 
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+  // Load on open and again when coming back from Create Tasks.
+  useFocusEffect(
+    useCallback(() => {
+      fetchTasks();
+    }, [fetchTasks]),
+  );
 
   const navigateToCreateTasks = () => {
     navigation.navigate('TaskManagement');
@@ -100,7 +111,7 @@ const AssignedTasksView = () => {
     }
   };
 
-  if (loading) {
+  if (loading && tasks.length === 0) {
     return (
       <View style={styles.container}>
         <Text>Loading tasks...</Text>
@@ -120,6 +131,14 @@ const AssignedTasksView = () => {
           onPress={navigateToCreateTasks}>
           <Text style={styles.buttonText}>Create Tasks</Text>
         </TouchableOpacity>
+        {loadError ? (
+          <TouchableOpacity onPress={fetchTasks} style={styles.taskItem}>
+            <Text style={styles.label}>Couldn't load tasks: {loadError}</Text>
+            <Text style={[styles.label, { fontWeight: 'bold' }]}>Tap to try again</Text>
+          </TouchableOpacity>
+        ) : tasks.length === 0 ? (
+          <Text style={styles.label}>No tasks assigned to you yet.</Text>
+        ) : null}
         {tasks.map(task => (
           <View key={task.name} style={styles.taskItem}>
             <Text style={styles.taskTitle}>Task #{task.name}</Text>
@@ -139,7 +158,7 @@ const AssignedTasksView = () => {
                   <Text style={styles.label}>Description:</Text>
                   
                   <TaskDescription
-                    description={detail.task_description}
+                    description={detail[descField] ?? detail.task_description ?? detail.description}
                     onInteractionStart={() => setScrollEnabled(false)} // Disable ScrollView scroll when interacting
                     onInteractionEnd={() => setScrollEnabled(true)} // Enable ScrollView scroll after interaction
                   />

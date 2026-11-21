@@ -16,11 +16,10 @@ import {Dropdown} from 'react-native-element-dropdown';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import {
   getAllEmployees,
-  getTaskCategories,
   getBranches,
   createTask,
-  getTaskStatus,
-  getTaskEmployeeDivision,
+  getTaskFieldOptions,
+  erpErrorMessage,
 } from '../../api';
 
 const TaskManagement = () => {
@@ -59,6 +58,7 @@ const TaskManagement = () => {
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   const [activeDatePickerIndex, setActiveDatePickerIndex] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchEmployees();
@@ -77,10 +77,10 @@ const TaskManagement = () => {
     }
   };
 
+  // Dropdown choices come from the ERP form itself (Select options / Link records).
   const fetchCategories = async () => {
     try {
-      const data = await getTaskCategories();
-      setCategories(data);
+      setCategories(await getTaskFieldOptions('task_category'));
     } catch (error) {
       console.error("Error fetching categories:");
     }
@@ -88,8 +88,7 @@ const TaskManagement = () => {
 
   const fetchEmpDivison = async () => {
     try {
-      const data = await getTaskEmployeeDivision();
-      setEmpDivison(data);
+      setEmpDivison(await getTaskFieldOptions('employee_division'));
     } catch (error) {
       console.error("Error fetching Divisons:");
     }
@@ -97,8 +96,7 @@ const TaskManagement = () => {
 
   const fetchStatus = async () => {
     try {
-      const data = await getTaskStatus();
-      setStatus(data);
+      setStatus(await getTaskFieldOptions('status'));
     } catch (error) {
       console.error("Error fetching Status:");
     }
@@ -198,25 +196,30 @@ const TaskManagement = () => {
     }
   
 
-    try {
-      for (let task of tasks) {
+    if (submitting) return;
+    setSubmitting(true);
+    // Submit one by one; keep the ones ERP rejected so they can be fixed and resent.
+    const failed = [];
+    let firstError = null;
+    for (let task of tasks) {
+      try {
         await createTask(task);
-
+      } catch (error) {
+        console.error("Error submitting task:");
+        failed.push(task);
+        if (!firstError) firstError = erpErrorMessage(error, 'Failed to submit tasks. Please try again.');
       }
+    }
+    setSubmitting(false);
+    setTasks(failed);
+    if (failed.length === 0) {
       Alert.alert('Success', 'All tasks submitted successfully');
-      setTasks([]);
-    } catch (error) {
-      console.error("Error submitting tasks:");
-      let errorMessage = 'Failed to submit tasks. Please try again.';
-      if (error.response && error.response.data && error.response.data._server_messages) {
-        try {
-          const serverMessages = JSON.parse(error.response.data._server_messages);
-          errorMessage = serverMessages[0].message || errorMessage;
-        } catch (parseError) {
-          console.error("Error parsing server messages:");
-        }
-      }
-      Alert.alert('Error', errorMessage);
+    } else {
+      const saved = tasks.length - failed.length;
+      Alert.alert(
+        'Error',
+        (saved ? `${saved} saved, ${failed.length} not saved.\n\n` : '') + `ERP says: ${firstError}`,
+      );
     }
   };
 
@@ -233,7 +236,9 @@ const TaskManagement = () => {
           inputSearchStyle={styles.inputSearchStyle}
           iconStyle={styles.iconStyle}
           data={employees.map(employee => ({
-            label: employee.name,
+            label: employee.employee_name
+              ? `${employee.employee_name} (${employee.name})`
+              : employee.name,
             value: employee.name,
           }))}
           search
@@ -253,14 +258,9 @@ const TaskManagement = () => {
             onValueChange={value => handleInputChange('task_category', value)}
             style={styles.picker}>
             <Picker.Item label="Select Category" value="" />
-            {categories &&
-              categories.map(category => (
-                <Picker.Item
-                  key={category.task_category}
-                  label={category.task_category}
-                  value={category.task_category}
-                />
-              ))}
+            {categories.map(category => (
+              <Picker.Item key={category} label={category} value={category} />
+            ))}
           </Picker>
         </View>
 
@@ -270,8 +270,9 @@ const TaskManagement = () => {
             selectedValue={newTask.status}
             onValueChange={value => handleInputChange('status', value)}
             style={styles.picker}>
-            <Picker.Item label="Open" value="Open" />
-            <Picker.Item label="Completed" value="Completed" />
+            {(status.length ? status : ['Open', 'Completed']).map(s => (
+              <Picker.Item key={s} label={s} value={s} />
+            ))}
           </Picker>
         </View>
 
@@ -285,11 +286,7 @@ const TaskManagement = () => {
             style={styles.picker}>
             <Picker.Item label="Select Employee Division" value="" />
             {EmpDivison.map(division => (
-              <Picker.Item
-                key={division.employee_division}
-                label={division.employee_division}
-                value={division.employee_division}
-              />
+              <Picker.Item key={division} label={division} value={division} />
             ))}
           </Picker>
         </View>
@@ -427,28 +424,28 @@ const TaskManagement = () => {
                 <Text style={styles.buttonText}>Close</Text>
               </TouchableOpacity>
             </ScrollView>
+            {/* Inside the popup: on iOS a picker can't open over a modal from outside it. */}
+            <DateTimePickerModal
+              isVisible={showStartDatePicker}
+              mode="datetime"
+              onConfirm={date => {
+                setShowStartDatePicker(false);
+                handleTaskDetailChange(activeDatePickerIndex, 'start_datetime', date);
+              }}
+              onCancel={() => setShowStartDatePicker(false)}
+            />
+
+            <DateTimePickerModal
+              isVisible={showEndDatePicker}
+              mode="datetime"
+              onConfirm={date => {
+                setShowEndDatePicker(false);
+                handleTaskDetailChange(activeDatePickerIndex, 'end_datetime', date);
+              }}
+              onCancel={() => setShowEndDatePicker(false)}
+            />
           </View>
         </Modal>
-
-        <DateTimePickerModal
-          isVisible={showStartDatePicker}
-          mode="datetime"
-          onConfirm={date => {
-            setShowStartDatePicker(false);
-            handleTaskDetailChange(activeDatePickerIndex, 'start_datetime', date);
-          }}
-          onCancel={() => setShowStartDatePicker(false)}
-        />
-
-        <DateTimePickerModal
-          isVisible={showEndDatePicker}
-          mode="datetime"
-          onConfirm={date => {
-            setShowEndDatePicker(false);
-            handleTaskDetailChange(activeDatePickerIndex, 'end_datetime', date);
-          }}
-          onCancel={() => setShowEndDatePicker(false)}
-        />
 
         <Text style={styles.label}>Added Tasks</Text>
         {tasks.length === 0 ? (
@@ -466,9 +463,12 @@ const TaskManagement = () => {
         )}
 
         <TouchableOpacity
-          style={[styles.submitButton, {marginBottom: 50}]}
+          style={[styles.submitButton, {marginBottom: 50}, submitting && {opacity: 0.6}]}
+          disabled={submitting}
           onPress={handleSubmitAllTasks}>
-          <Text style={styles.buttonText}>Submit All Tasks</Text>
+          <Text style={styles.buttonText}>
+            {submitting ? 'Submitting…' : 'Submit All Tasks'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </View>

@@ -993,6 +993,7 @@ export const getAllTasks = async () => {
 export const getTaskDetails = async taskId => {
   try {
     const response = await api.get('/frappe.client.get', {
+      timeout: 30000,
       params: {
         doctype: 'Employee Task Management',
         name: taskId,
@@ -1022,25 +1023,52 @@ export const createTask = async taskData => {
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
     };
 
-    const formattedTaskData = {
-      doctype: 'Employee Task Management',
+    const meta = await getTaskMeta();
+    const child = meta && meta.child;
+    const descField = (meta && meta.descField) || 'task_description';
+    // Child "status" is a Select (Open/Completed) or a Check, never `false`.
+    const childStatus = (() => {
+      const f = child && child.byName.status;
+      if (!f) return undefined;
+      if (f.fieldtype === 'Check') return 0;
+      const opts = String(f.options || '').split('\n').map(s => s.trim()).filter(Boolean);
+      return opts.includes('Open') ? 'Open' : opts[0];
+    })();
+    const d = taskData.date instanceof Date ? taskData.date : new Date(taskData.date);
+    const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const clean = obj => {
+      const out = {};
+      Object.keys(obj).forEach(k => {
+        if (obj[k] === '' || obj[k] === undefined || obj[k] === null) return;
+        out[k] = obj[k];
+      });
+      return out;
+    };
+    // Drop fields the ERP form no longer has.
+    const keep = (m, obj) =>
+      m ? Object.fromEntries(Object.entries(obj).filter(([k]) => k === 'doctype' || m.byName[k])) : obj;
+
+    const formattedTaskData = keep(meta && meta.parent, clean({
+      doctype: TASK_DOCTYPE,
       employee: taskData.employee,
       task_category: taskData.task_category,
       status: taskData.status,
       employee_division: taskData.employee_division,
       branch: taskData.branch,
-      date: taskData.date.toISOString().split('T')[0], // Format date as YYYY-MM-DD
+      date: localDate,
       assigned_by: taskData.assigned_by,
-      task_details: taskData.taskDetails.map(detail => ({
-        description: detail.description,
+      customer: taskData.customer,
+    }));
+    formattedTaskData[(meta && meta.tableField) || 'task_details'] = taskData.taskDetails.map(detail =>
+      keep(child, clean({
+        [descField]: detail.description,
         start_datetime: formatDateTime(detail.start_datetime),
         end_datetime: formatDateTime(detail.end_datetime),
-        status: detail.status,
+        status: childStatus,
         hours_spent: detail.hours_spent,
         result: detail.result,
       })),
-      customer: taskData.customer,
-    };
+    );
 
     const response = await api.post(
       '/frappe.client.insert',
@@ -1120,20 +1148,18 @@ export const getTaskCategories = async () => {
 
 export const getAssignedTasks = async current_user => {
   try {
+    const meta = await getTaskMeta();
+    const wanted = ['name', 'employee', 'task_category', 'status', 'date', 'assigned_by', 'employee_division', 'branch'];
+    // Only ask for columns the form still has; an unknown column fails the whole list.
+    const fields = meta ? wanted.filter(f => f === 'name' || meta.parent.byName[f]) : wanted;
     const response = await api.get('/frappe.client.get_list', {
+      timeout: 30000,
       params: {
-        doctype: 'Employee Task Management',
-        fields: JSON.stringify([
-          'name',
-          'employee',
-          'task_category',
-          'status',
-          'date',
-          'assigned_by',
-          'employee_division',
-          'branch'
-        ]),
+        doctype: TASK_DOCTYPE,
+        fields: JSON.stringify(fields),
         filters: JSON.stringify([['employee', '=', current_user]]),
+        order_by: 'modified desc',
+        limit_page_length: 100,
       },
       headers: {
         'Content-Type': 'application/json',
@@ -1299,6 +1325,120 @@ export const getBranches = async () => {
     console.error("Failed to fetch branch locations:");
     throw error;
   }
+};
+
+// ---- Employee Task Management: read the doctype's real fields from ERP ----
+// The task screens used to hard-code field names; when the ERP form changed
+// (renamed/removed fields, new mandatory ones) lists failed and inserts were
+// rejected. Everything below adapts to whatever the doctype has now.
+
+export const TASK_DOCTYPE = 'Employee Task Management';
+let taskMetaPromise = null;
+
+const asMeta = (docs, doctype) => {
+  const doc = (docs || []).find(d => d && d.name === doctype);
+  if (!doc) return null;
+  const fields = doc.fields || [];
+  const byName = {};
+  fields.forEach(f => {
+    byName[f.fieldname] = f;
+  });
+  return {name: doctype, fields, byName};
+};
+
+const DESCRIPTION_FIELDS = ['task_description', 'description', 'details', 'task', 'task_detail'];
+const TEXT_TYPES = ['Text Editor', 'Small Text', 'Text', 'Long Text', 'Data'];
+
+// {parent, child, tableField, descField} or null when ERP doesn't let us read it.
+export const getTaskMeta = () => {
+  if (!taskMetaPromise) {
+    taskMetaPromise = api
+      .get('/frappe.desk.form.load.getdoctype', {params: {doctype: TASK_DOCTYPE}})
+      .then(response => {
+        const docs = response.data.docs || [];
+        const parent = asMeta(docs, TASK_DOCTYPE);
+        if (!parent) return null;
+        const table =
+          parent.byName.task_details ||
+          parent.fields.find(f => f.fieldtype === 'Table');
+        const child = table ? asMeta(docs, table.options) : null;
+        let descField = null;
+        if (child) {
+          descField =
+            DESCRIPTION_FIELDS.find(n => child.byName[n]) ||
+            (child.fields.find(f => TEXT_TYPES.includes(f.fieldtype)) || {}).fieldname ||
+            null;
+        }
+        return {parent, child, tableField: table ? table.fieldname : 'task_details', descField};
+      })
+      .catch(() => {
+        taskMetaPromise = null; // try again next time
+        return null;
+      });
+  }
+  return taskMetaPromise;
+};
+
+const uniq = values => [...new Set(values.filter(v => v !== null && v !== undefined && v !== ''))];
+
+// Choices for a field of the task form: Select options, or the records of a Link.
+export const getTaskFieldOptions = async fieldname => {
+  const meta = await getTaskMeta();
+  const field = meta && meta.parent.byName[fieldname];
+  if (field && field.fieldtype === 'Select') {
+    return uniq(String(field.options || '').split('\n').map(s => s.trim()));
+  }
+  if (field && field.fieldtype === 'Link' && field.options) {
+    try {
+      const response = await api.get('/frappe.client.get_list', {
+        params: {
+          doctype: field.options,
+          fields: JSON.stringify(['name']),
+          limit_page_length: 'None',
+          order_by: 'name asc',
+        },
+      });
+      const names = uniq((response.data.message || []).map(r => r.name));
+      if (names.length) return names;
+    } catch (e) {
+      // No read access to the linked list; use the values already on tasks.
+    }
+  }
+  // Unknown field type or no access to the form: fall back to values already used.
+  const response = await api.get('/frappe.client.get_list', {
+    params: {
+      doctype: TASK_DOCTYPE,
+      fields: JSON.stringify([fieldname]),
+      limit_page_length: 500,
+    },
+  });
+  return uniq((response.data.message || []).map(r => r[fieldname]));
+};
+
+// The text of an ERP error ("Value missing for: Task Category", "Not permitted", ...).
+export const erpErrorMessage = (error, fallback) => {
+  const data = error && error.response && error.response.data;
+  const strip = s => String(s).replace(/<[^>]+>/g, '').trim();
+  try {
+    if (data && data._server_messages) {
+      const msgs = JSON.parse(data._server_messages)
+        .map(m => {
+          try {
+            return JSON.parse(m).message;
+          } catch (e) {
+            return m;
+          }
+        })
+        .filter(Boolean)
+        .map(strip);
+      if (msgs.length) return msgs.join('\n');
+    }
+  } catch (e) {}
+  if (data && data.exception) return strip(String(data.exception).split('\n').pop());
+  if (data && typeof data.message === 'string') return strip(data.message);
+  if (error && error.code === 'ECONNABORTED') return 'ERP took too long to answer. Please try again.';
+  if (error && error.message === 'Network Error') return 'No connection to ERP. Check your internet.';
+  return fallback;
 };
 
 // Function to get branches
