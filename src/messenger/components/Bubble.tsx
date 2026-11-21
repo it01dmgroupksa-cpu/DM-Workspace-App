@@ -16,6 +16,7 @@ import type {Conversation, Message, Person} from '../types';
 import {pieces} from '../mentions';
 import {VoicePlayer} from './VoicePlayer';
 import {AgentCard} from './AgentCard';
+import {TravelCard} from './TravelCard';
 
 type Props = {
   m: Message;
@@ -32,6 +33,8 @@ type Props = {
   onOriginal: (m: Message) => void;
   // 0–1 while this message's file uploads.
   progress?: number;
+  // This person approves air tickets: the approval card shows its buttons.
+  travelApprover?: boolean;
 };
 
 // Web addresses in a message open in the browser; everything else stays plain text.
@@ -104,9 +107,12 @@ export const Bubble = memo(function Bubble({
   onCallBack,
   onOriginal,
   progress,
+  travelApprover,
 }: Props) {
   // An approval card from the CEO agent: its own bubble with Approve / Reject.
   if (m.sender === ASSISTANT && m.agent?.requestId && !m.deleted) return <AgentCard m={m} />;
+  // An air ticket sent for the CEO's approval.
+  if (m.approval?.doctype === 'Travel Request' && !m.deleted) return <TravelCard m={m} isApprover={!!travelApprover} />;
   if (m.kind === 'system') {
     const call = callEntry(m);
     const pinned = pinEntry(m);

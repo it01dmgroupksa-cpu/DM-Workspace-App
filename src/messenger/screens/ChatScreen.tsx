@@ -684,6 +684,7 @@ export function ChatScreen({
                   }
                   onCallBack={video => callable && call(video)}
                   onOriginal={m => translate(m, null)}
+                  travelApprover={!!limits.travelApprover}
                   progress={
                     item.m!.clientId
                       ? messenger.progress.get(item.m!.clientId)

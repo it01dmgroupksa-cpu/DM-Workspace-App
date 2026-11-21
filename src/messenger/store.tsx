@@ -544,6 +544,7 @@ export function createMessenger(me: string, render: () => void) {
         ...boot.limits,
         translation: !!boot.translation,
         callsEnabled: !!boot.callsEnabled,
+        travelApprover: !!boot.travelApprover,
       };
       people.set(me, {...boot.me});
       const seen = new Set<string>();

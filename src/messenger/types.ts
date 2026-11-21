@@ -27,6 +27,8 @@ export type Message = {
   byAssistant?: boolean;
   // Posted by the CEO agent: its chat, and the answer's run or the approval card's request.
   agent?: {chatId: string; runId?: string; requestId?: string} | null;
+  // An approval card (an air ticket Travel Request): the snapshot the panel keeps current.
+  approval?: {doctype: string; name: string; state: string; [key: string]: unknown} | null;
   createdAt: string;
   cursor?: string;
   editedAt?: string | null;
@@ -117,6 +119,8 @@ export type Limits = {
   deleteForAllHours: number;
   translation: boolean;
   callsEnabled: boolean;
+  // This person approves air tickets (gets the card's buttons).
+  travelApprover?: boolean;
 };
 
 // An approval card the CEO agent prepared: the panel's write-request view
