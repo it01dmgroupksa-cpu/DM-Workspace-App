@@ -112,6 +112,32 @@ An employee may have Messenger open on the ERP desktop and on the phone at once.
 - Push notifications for new messages and incoming calls while the app is closed,
   with Answer and Decline on call notifications
 
+## The CEO agent, the sidebar, and silent updates
+
+- **CEO agent in the Durar Assistant chat.** For anyone the CEO agent is open to (ERP and
+  the panel decide), the Durar Assistant chat sits at the top of Chats and is the CEO
+  agent: text typed there is a question (`src/messenger/agent.ts`, through ERP's
+  `durar_ai_relay`, never `durar_messenger`), answers arrive as messages, and approval
+  cards have Approve / Reject / Apply again (`components/AgentCard.tsx`,
+  `approvals.ts`). Setup is on the panel side: `apps/ceopanel/docs/MESSENGER.md`,
+  "The CEO agent in Messenger".
+- **Sidebar.** The bottom tab bar is now a sidebar (☰): Attendance, Directory, Delivery /
+  Sales / Purchase RFQ (for staff allowed them), Leave, Assigned Tasks, Request Form,
+  Official Memo, Profile, Web View. Chat is the round button bottom right with the unread
+  count (`src/navigation/sidebar.tsx`). Screen names did not change.
+- **Web View** shares the app's ERP cookies, so the iPhone is signed in there too.
+- **Silent update.** These are JavaScript only (runtime `2`), so they go out without a store
+  release: `npx eas-cli update --channel production --message "<what changed>"`. Phones
+  get it the next time the app opens and use it on the open after that.
+
+Still to set up in ERP (found while checking the app):
+
+- `dm_app_report` and the **DM App Report** doctype are not on the site yet, so Report /
+  Block in Messenger and the Profile's account deletion request fail. Set them up as
+  described under "Reports, blocking and account deletion" below.
+- `employee_directory_sync` runs hourly; its second copy (DocType Event, Employee, After
+  Save) is missing, so Directory changes take up to an hour (`erp/employee_directory_sync.py`).
+
 ## Before the first build
 
 ### 1. Install
