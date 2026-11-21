@@ -557,8 +557,11 @@ export function ChatScreen({
       )}
       {live &&
       callable &&
+      // Its ringing screen (or the call itself) is already on this phone.
       !inThisCall &&
-      myState !== 'ringing' &&
+      // Still "ringing" but not ringing here (the ring stopped, or never reached this
+      // phone): a group call under way can be joined like any other.
+      !(myState === 'ringing' && !live.answeredAt) &&
       // Your own call still ringing can't be moved; it has nothing to move yet.
       !(myState === 'joined' && !live.answeredAt) ? (
         <Pressable
