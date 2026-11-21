@@ -9,9 +9,12 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  FlatList,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   Vibration,
@@ -33,8 +36,10 @@ import {
   VideoTrack,
   isTrackReference,
   useLocalParticipant,
+  useParticipants,
   useRemoteParticipants,
   useRoomContext,
+  useSpeakingParticipants,
   useTracks,
 } from '@livekit/react-native';
 import {
@@ -142,6 +147,22 @@ function ring(on: boolean, callId?: string) {
   }
 }
 
+// The id this phone rings a call under: its own, or, rung again in a group call, the id
+// that ring went out under (Android rings each id once).
+function ringIdOf(call: Call | null | undefined, me: string | undefined) {
+  return call?.members.find(m => m.user === me)?.ringId || call?.id;
+}
+// Stop this phone ringing a call, under both ids.
+function stopRings(call: Call | null | undefined, me: string | undefined) {
+  if (!call) return;
+  ring(false, call.id);
+  const other = ringIdOf(call, me);
+  if (other && other !== call.id) {
+    nativeCalls.stopRinging(other);
+    nativeCalls.ended(other);
+  }
+}
+
 // "Calling…" until one of the other side's phones confirms it is ringing, then
 // "Ringing…", like WhatsApp. A panel that doesn't report ringingAt yet: "Ringing…".
 function outgoingStatus(call: Call | null) {
@@ -179,6 +200,8 @@ async function permissions(video: boolean) {
 export function CallProvider({children}: {children: React.ReactNode}) {
   const messenger = useMaybeMessenger();
   const me = messenger?.me;
+  const meRef = useRef(me);
+  meRef.current = me;
   const [s, setS] = useState<Session | null>(null);
   const ref = useRef<Session | null>(null);
   const ringTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -208,6 +231,7 @@ export function CallProvider({children}: {children: React.ReactNode}) {
       if (ringTimer.current) clearTimeout(ringTimer.current);
       Vibration.cancel();
       ring(false, current.call?.id);
+      stopRings(current.call, meRef.current);
       set(null);
       if (current.call) {
         dismissCallNotifications(current.call.id);
@@ -264,7 +288,15 @@ export function CallProvider({children}: {children: React.ReactNode}) {
 
   const join = useCallback(
     async (given: Call, video: boolean, answer = false, title?: string) => {
-      const current = ref.current?.call?.id === given.id ? ref.current : null;
+      // The call already on screen: the same id, or (Answer on a ring that went out under
+      // its Ring again id) the call ringing in that chat.
+      const current =
+        ref.current?.call?.id === given.id ||
+        (ref.current?.mode === 'incoming' &&
+          ref.current.call &&
+          ref.current.conversationId === given.conversationId)
+          ? ref.current
+          : null;
       if (ref.current && !current)
         return Alert.alert('Call', "You're already in a call.");
       // Already showing this call (it arrived on the live stream): keep what we know of it
@@ -273,6 +305,11 @@ export function CallProvider({children}: {children: React.ReactNode}) {
       if (ringTimer.current) clearTimeout(ringTimer.current);
       Vibration.cancel();
       ring(false, call.id);
+      stopRings(call, me);
+      if (given.id !== call.id) {
+        nativeCalls.stopRinging(given.id);
+        nativeCalls.ended(given.id);
+      }
       dismissCallNotifications(call.id);
       const key = current?.key ?? ++keys;
       set({
@@ -312,6 +349,11 @@ export function CallProvider({children}: {children: React.ReactNode}) {
         if (now()?.key !== key)
           return relay('calls.leave', {callId: call.id}).catch(() => {});
         reportEvent(`call_joined ${call.id}`);
+        // Answered under a Ring again id: the panel answers with the real call.
+        if (result.call.id !== call.id) {
+          nativeCalls.stopRinging(call.id);
+          nativeCalls.ended(call.id);
+        }
         patch(key, {call: result.call, url: result.url, token: result.token});
       } catch (error: any) {
         reportEvent(`call_join_refused ${call.id}: ${error?.message ?? 'error'}`);
@@ -446,7 +488,7 @@ export function CallProvider({children}: {children: React.ReactNode}) {
         // counts a phone with the live stream open as ringing.
         const conv = messenger.convs.get(call.conversationId);
         nativeCalls.presentIncoming(
-          call.id,
+          ringIdOf(call, me)!,
           call.conversationId,
           conv
             ? convTitle(conv, messenger.people)
@@ -784,6 +826,7 @@ function Stage({
   onMinimize,
 }: ViewProps & {status: string}) {
   const pip = usePictureInPicture();
+  const [people, setPeople] = useState(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -814,9 +857,14 @@ function Stage({
         <Text style={styles.barText}>Tap to return</Text>
       </Pressable>
     );
+  // A group video call shows everyone in a grid; the group's name moves to the top.
+  const grid = group && !!s.url && s.video;
+  const members = s.call?.members ?? [];
+  const joined = members.filter(m => m.state === 'joined').length;
+  const showPeople = group && !!s.call && s.mode !== 'incoming';
   return (
     <SafeAreaView style={styles.root}>
-      {s.url ? <Videos /> : null}
+      {grid ? <GroupGrid /> : s.url ? <Videos /> : null}
       <View style={styles.top}>
         {s.mode !== 'incoming' ? (
           <Pressable
@@ -826,17 +874,45 @@ function Stage({
             <Ionicons name="chevron-down" size={22} color="#fff" />
           </Pressable>
         ) : null}
+        <View style={styles.topTitle} pointerEvents="none">
+          {grid ? (
+            <>
+              <Text style={styles.gridTitle} numberOfLines={1}>
+                {title}
+              </Text>
+              <Text style={styles.status}>{elapsed}</Text>
+            </>
+          ) : null}
+        </View>
+        {showPeople ? (
+          <Pressable
+            onPress={() => setPeople(true)}
+            style={styles.peopleButton}
+            accessibilityLabel={`People: ${joined} of ${members.length} joined`}>
+            <Ionicons name="people" size={18} color="#fff" />
+            <Text style={styles.peopleCount}>
+              {joined}/{members.length}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
-      <View style={styles.who} pointerEvents="none">
-        <Avatar
-          person={group ? undefined : peer}
-          group={group}
-          groupId={s.conversationId}
-          size={96}
-        />
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.status}>{elapsed}</Text>
-      </View>
+      {grid ? null : (
+        <View style={styles.who} pointerEvents="none">
+          <Avatar
+            person={group ? undefined : peer}
+            group={group}
+            groupId={s.conversationId}
+            size={96}
+          />
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.status}>{elapsed}</Text>
+          {showPeople ? (
+            <Text style={styles.status}>
+              {joined} joined · {members.length - joined} not joined
+            </Text>
+          ) : null}
+        </View>
+      )}
       {s.mode === 'incoming' ? (
         <View style={styles.actions}>
           <Pressable
@@ -882,7 +958,231 @@ function Stage({
           </Pressable>
         </View>
       )}
+      {people && s.call ? (
+        <Participants
+          call={s.call}
+          video={s.video}
+          onClose={() => setPeople(false)}
+        />
+      ) : null}
     </SafeAreaView>
+  );
+}
+
+// A group video call: everyone (me included) in a grid sized to how many are in it. One
+// column for two, two up to six, three after that; past what fits, the grid scrolls.
+// Someone without their camera on shows as their photo and name.
+function GroupGrid() {
+  const messenger = useMaybeMessenger();
+  const side = useFacing();
+  const participants = useParticipants();
+  const speaking = new Set(useSpeakingParticipants().map(p => p.identity));
+  const cameras = useTracks([Track.Source.Camera], {
+    onlySubscribed: false,
+  }).filter(isTrackReference);
+  const [area, setArea] = useState({width: 0, height: 0});
+  const n = Math.max(participants.length, 1);
+  const cols = n <= 2 ? 1 : n <= 6 ? 2 : 3;
+  const rows = Math.ceil(n / cols);
+  const width = area.width / cols;
+  const fits = area.height / rows;
+  const height = Math.max(fits, width * 0.9);
+  return (
+    <View
+      style={styles.grid}
+      onLayout={e =>
+        setArea({
+          width: e.nativeEvent.layout.width,
+          height: e.nativeEvent.layout.height,
+        })
+      }>
+      {area.width ? (
+        <ScrollView
+          contentContainerStyle={styles.gridInner}
+          scrollEnabled={height > fits}>
+          {participants.map(p => {
+            const camera = cameras.find(
+              t =>
+                t.participant.identity === p.identity && !t.publication.isMuted,
+            );
+            const person = messenger
+              ? personOf(messenger.people, p.identity)
+              : undefined;
+            const name = p.isLocal
+              ? 'You'
+              : person?.name || p.name || p.identity;
+            return (
+              <View
+                key={p.identity}
+                style={[
+                  styles.tile,
+                  {width, height},
+                  speaking.has(p.identity) && styles.tileSpeaking,
+                ]}>
+                {camera ? (
+                  <VideoTrack
+                    trackRef={camera}
+                    style={StyleSheet.absoluteFill}
+                    objectFit="cover"
+                    mirror={p.isLocal && side === 'user'}
+                  />
+                ) : (
+                  <View style={styles.tileEmpty}>
+                    <Avatar person={person} size={Math.min(72, width / 2.5)} />
+                  </View>
+                )}
+                <Text style={styles.tileName} numberOfLines={1}>
+                  {name}
+                </Text>
+              </View>
+            );
+          })}
+        </ScrollView>
+      ) : null}
+    </View>
+  );
+}
+
+// Everyone the group call rang: who is in it, who isn't and why, with Ring again for
+// anyone not in it. The list follows the call live.
+function Participants({
+  call,
+  video,
+  onClose,
+}: {
+  call: Call;
+  video: boolean;
+  onClose: () => void;
+}) {
+  const messenger = useMaybeMessenger();
+  const me = messenger?.me;
+  const [busy, setBusy] = useState<Set<string>>(new Set());
+  const order = {joined: 0, ringing: 1, missed: 2, declined: 3, left: 4};
+  const rows = [...call.members].sort(
+    (a, b) =>
+      order[a.state] - order[b.state] ||
+      (a.user === me ? -1 : b.user === me ? 1 : 0) ||
+      (messenger ? personOf(messenger.people, a.user).name : a.user).localeCompare(
+        messenger ? personOf(messenger.people, b.user).name : b.user,
+      ),
+  );
+  const joined = rows.filter(m => m.state === 'joined').length;
+  const ringable = rows.filter(
+    m => m.user !== me && m.state !== 'joined' && m.state !== 'ringing',
+  );
+  async function ringAgain(users: string[]) {
+    if (!users.length) return;
+    setBusy(prev => new Set([...prev, ...users]));
+    try {
+      const result = await relay<{rung?: string[]}>('calls.start', {
+        conversationId: call.conversationId,
+        video,
+        invite: users,
+      });
+      if (result?.rung && !result.rung.length)
+        Alert.alert('Ring again', 'They are already ringing or in the call.');
+    } catch (error: any) {
+      Alert.alert('Ring again', error?.message || "Couldn't ring them.");
+    } finally {
+      setBusy(prev => {
+        const next = new Set(prev);
+        users.forEach(u => next.delete(u));
+        return next;
+      });
+    }
+  }
+  const label = {
+    joined: 'In the call',
+    ringing: 'Ringing…',
+    missed: "Didn't answer",
+    declined: 'Declined',
+    left: 'Left',
+  };
+  return (
+    <View style={styles.sheetWrap}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={styles.sheet}>
+        <View style={styles.sheetHead}>
+          <View style={{flex: 1}}>
+            <Text style={styles.sheetTitle}>People in this call</Text>
+            <Text style={styles.sheetSub}>
+              {joined} joined · {rows.length - joined} not joined ·{' '}
+              {rows.length} called
+            </Text>
+          </View>
+          <Pressable onPress={onClose} accessibilityLabel="Close">
+            <Ionicons name="close" size={24} color="#111" />
+          </Pressable>
+        </View>
+        {ringable.length ? (
+          <Pressable
+            style={styles.ringAll}
+            onPress={() =>
+              Alert.alert(
+                'Ring everyone again?',
+                `${ringable.length} ${
+                  ringable.length === 1 ? 'person' : 'people'
+                } who didn't join will ring again.`,
+                [
+                  {text: 'Cancel', style: 'cancel'},
+                  {
+                    text: 'Ring',
+                    onPress: () => ringAgain(ringable.map(m => m.user)),
+                  },
+                ],
+              )
+            }>
+            <Ionicons name="notifications" size={16} color="#fff" />
+            <Text style={styles.ringAllText}>
+              Ring everyone who didn't join ({ringable.length})
+            </Text>
+          </Pressable>
+        ) : null}
+        <FlatList
+          data={rows}
+          keyExtractor={m => m.user}
+          renderItem={({item: m}) => {
+            const person = messenger
+              ? personOf(messenger.people, m.user)
+              : {user: m.user, name: m.user};
+            const canRing =
+              m.user !== me && m.state !== 'joined' && m.state !== 'ringing';
+            return (
+              <View style={styles.personRow}>
+                <Avatar person={person} size={38} />
+                <View style={{flex: 1}}>
+                  <Text style={styles.personName} numberOfLines={1}>
+                    {person.name}
+                    {m.user === me ? ' (you)' : ''}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.personState,
+                      m.state === 'joined' && {color: '#16a34a'},
+                    ]}>
+                    {label[m.state]}
+                  </Text>
+                </View>
+                {canRing ? (
+                  <Pressable
+                    style={[styles.ringOne, busy.has(m.user) && {opacity: 0.5}]}
+                    disabled={busy.has(m.user)}
+                    onPress={() => ringAgain([m.user])}
+                    accessibilityLabel={`Ring ${person.name} again`}>
+                    {busy.has(m.user) ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Ionicons name="call" size={14} color="#fff" />
+                    )}
+                    <Text style={styles.ringOneText}>Ring</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            );
+          }}
+        />
+      </View>
+    </View>
   );
 }
 
@@ -1154,4 +1454,98 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   barText: {color: '#fff', fontWeight: '600', flexShrink: 1},
+  topTitle: {flex: 1, alignItems: 'center', paddingHorizontal: 8},
+  gridTitle: {color: '#fff', fontSize: 17, fontWeight: '700'},
+  peopleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 40,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  peopleCount: {color: '#fff', fontWeight: '700'},
+  grid: {
+    position: 'absolute',
+    top: 72,
+    bottom: 116,
+    left: 0,
+    right: 0,
+  },
+  gridInner: {flexDirection: 'row', flexWrap: 'wrap'},
+  tile: {
+    borderWidth: 2,
+    borderColor: '#0b141a',
+    backgroundColor: '#1f2c33',
+    overflow: 'hidden',
+  },
+  tileSpeaking: {borderColor: '#16a34a'},
+  tileEmpty: {flex: 1, alignItems: 'center', justifyContent: 'center'},
+  tileName: {
+    position: 'absolute',
+    left: 6,
+    bottom: 6,
+    right: 6,
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowRadius: 3,
+  },
+  sheetWrap: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    maxHeight: '80%',
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    paddingBottom: 24,
+  },
+  sheetHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e5e7eb',
+  },
+  sheetTitle: {fontSize: 17, fontWeight: '700', color: '#111'},
+  sheetSub: {fontSize: 13, color: '#6b7280', marginTop: 2},
+  ringAll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    margin: 12,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: BRAND.navy,
+  },
+  ringAllText: {color: '#fff', fontWeight: '700'},
+  personRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  personName: {fontSize: 15, fontWeight: '600', color: '#111'},
+  personState: {fontSize: 12, color: '#6b7280', marginTop: 1},
+  ringOne: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: '#16a34a',
+  },
+  ringOneText: {color: '#fff', fontWeight: '700', fontSize: 13},
 });

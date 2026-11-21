@@ -103,6 +103,9 @@ export type Call = {
     // When one of their devices confirmed it is ringing (calls.ringing / the push's
     // ackUrl). Absent from a panel that doesn't track it yet.
     ringingAt?: string | null;
+    // Rung again in a group call: the id that ring went out under (Android rings each
+    // id once). Answering with it joins this call.
+    ringId?: string | null;
   }[];
 };
 export type Limits = {
