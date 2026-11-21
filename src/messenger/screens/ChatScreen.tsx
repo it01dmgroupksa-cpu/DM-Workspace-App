@@ -214,6 +214,8 @@ export function ChatScreen({
       : 'typing…'
     : c.kind === 'group'
     ? `${c.memberCount} members`
+    : c.peer === ASSISTANT && messenger.state.agent?.conversationId === c.id
+    ? 'CEO agent · ask anything about the business'
     : c.peer === ASSISTANT
     ? 'Reports on the work it coordinates. Write here to instruct it.'
     : peer

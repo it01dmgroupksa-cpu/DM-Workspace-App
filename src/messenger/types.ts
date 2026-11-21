@@ -25,6 +25,8 @@ export type Message = {
   body: string;
   forwarded?: boolean;
   byAssistant?: boolean;
+  // Posted by the CEO agent: its chat, and the answer's run or the approval card's request.
+  agent?: {chatId: string; runId?: string; requestId?: string} | null;
   createdAt: string;
   cursor?: string;
   editedAt?: string | null;
@@ -115,4 +117,26 @@ export type Limits = {
   deleteForAllHours: number;
   translation: boolean;
   callsEnabled: boolean;
+};
+
+// An approval card the CEO agent prepared: the panel's write-request view
+// (apps/ceopanel/lib/ai/write-requests.ts, RequestView), read through messenger.cards.
+export type AgentCard = {
+  id: string;
+  tool: string;
+  channel?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'expired' | 'restricted';
+  execution: 'waiting' | 'ready' | 'executed' | 'failed' | 'unsupported';
+  preview?: {
+    title: string;
+    reason?: string;
+    company?: string;
+    target?: {doctype: string; name: string};
+    currentChecked?: boolean;
+    changes?: {field: string; old?: string; new: string}[];
+    details?: {label: string; value: string}[];
+  };
+  error?: string;
+  result?: {name: string; modified: string; detail?: string};
+  coordination?: {status: string; report: string | null; updatedAt: string};
 };

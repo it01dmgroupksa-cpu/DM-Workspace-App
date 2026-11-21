@@ -27,6 +27,13 @@ import {
   type OutItem,
 } from './outbox';
 import {onBeforeSignOut} from './session';
+import {
+  agentAvailable,
+  askAgent,
+  languageOf,
+  openAgent,
+  routeToAgent,
+} from './agent';
 import {loadBlocked, saveBlocked, sendReport, syncBlockedCalls} from './blocks';
 import type {Call, Conversation, Limits, Message, Person} from './types';
 
@@ -70,6 +77,8 @@ export function createMessenger(me: string, render: () => void) {
     error: '',
     me: null as Person | null,
     limits: DEFAULT_LIMITS,
+    // The CEO agent's Durar Assistant chat, when this person may use the CEO agent.
+    agent: null as {conversationId: string; chatId: string} | null,
     active: null as string | null,
     foreground: AppState.currentState === 'active',
     nearBottom: true,
@@ -562,8 +571,23 @@ export function createMessenger(me: string, render: () => void) {
       return;
     }
     loadDirectory();
+    loadAgent();
     connect();
     kick(true);
+  }
+  // The CEO can talk to the CEO agent in the Durar Assistant chat. ERP and the panel decide
+  // who may; for everyone else this changes nothing.
+  async function loadAgent() {
+    try {
+      if (!(await agentAvailable()) || closed) return;
+      const opened = await openAgent();
+      state.agent = opened;
+      if (!convs.has(opened.conversationId)) await refreshConv(opened.conversationId);
+      bump();
+      kick(true);
+    } catch {
+      /* the chat stays a normal Messenger chat until the next start */
+    }
   }
   async function loadDirectory() {
     try {
@@ -741,6 +765,9 @@ export function createMessenger(me: string, render: () => void) {
       item.uploadId = undefined;
       saveQueue();
     }
+    // A question for the CEO agent: through durar_ai_relay, same queue, same client id.
+    if (routeToAgent(item, state.agent?.conversationId ?? null))
+      return askAgent(item.clientId, item.body, languageOf(item.body));
     const {message} = await relay('messages.send', {
       conversationId: item.conversationId,
       clientId: item.clientId,

@@ -67,6 +67,7 @@ export function ChatsScreen({
     return () => clearTimeout(t);
   }, [q]);
 
+  const agentId = messenger.state.agent?.conversationId;
   const chats = useMemo(() => {
     const query = q.trim().toLowerCase();
     return [...messenger.convs.values()]
@@ -77,6 +78,8 @@ export function ChatsScreen({
       )
       .sort(
         (a, b) =>
+          // The CEO agent's chat stays at the top, like a pinned colleague.
+          Number(b.id === agentId) - Number(a.id === agentId) ||
           Number(b.pinned) - Number(a.pinned) ||
           +new Date(b.last?.at || b.createdAt) -
             +new Date(a.last?.at || a.createdAt),
