@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { Linking } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
@@ -14,9 +14,7 @@ import {
   OutstandingSalesIcon,
   RequestFormIcon,
   AnnouncementIcon,
-  MoreIcon,
   UserIcon,
-  ChatIcon,
   TripIcon,
   WebviewIcon
 } from './src/components/icons';
@@ -37,7 +35,8 @@ import DeliveryTrip from './src/components/DeliveryTrip';
 import DMWebView from './src/components/DMWebViewScreen';
 import { EmployeeProvider, EmployeeContext } from './src/context/EmployeeContext';
 import SplashScreen from './src/components/SplashScreen'; // Import SplashScreen
-import { MessengerRoot, MessengerScreen, MessengerTab, navigationRef, useUnread } from './src/messenger';
+import { MessengerRoot, MessengerScreen, navigationRef, useUnread } from './src/messenger';
+import { AppShell, BRAND_BLUE, MenuButton, type MenuItem } from './src/components/AppShell';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -49,104 +48,39 @@ interface Flags {
   showDelivery: boolean;
 }
 
-const SalesNavigator: React.FC = () => {
-  return (
-    <Tab.Navigator
-      screenOptions={{
-        tabBarActiveTintColor: '#103BA9',
-        tabBarInactiveTintColor: '#ccc',
-        headerShown: false,
-      }}
-    >
-      <Tab.Screen
-        name="Sales RFQ"
-        component={SalesPersonRFQ}
-        options={{
-          tabBarIcon: SalesRFQIcon,
-        }}
-      />
-      <Tab.Screen
-        name="Items Stock"
-        component={ItemsStock}
-        options={{
-          tabBarIcon: ItemStockIcon,
-        }}
-      />
-      <Tab.Screen
-        name="Sales Outstanding"
-        component={SalesOutstanding}
-        options={{
-          tabBarIcon: OutstandingSalesIcon,
-        }}
-      />
-    </Tab.Navigator>
-  );
-};
+type Page = MenuItem & { component: React.ComponentType<any> };
 
-const MoreNavigator: React.FC = () => {
-  return (
-    <Tab.Navigator
-      screenOptions={{
-        tabBarActiveTintColor: '#103BA9',
-        tabBarInactiveTintColor: '#ccc',
-        headerShown: false,
-      }}
-    >
-      <Tab.Screen
-        name="Leave"
-        component={LeaveManagement}
-        options={{
-          tabBarIcon: LeaveIcon,
-          tabBarLabel: 'Leave',
-        }}
-      />
-      <Tab.Screen
-        name="AssignedTasks"
-        component={AssignedTasks}
-        options={{
-          tabBarIcon: TaskManagementIcon,
-          tabBarLabel: 'Assigned Tasks',
-        }}
-      />
-      <Tab.Screen
-        name="MaterialsServiceRequestForm"
-        component={MaterialsServiceRequestForm}
-        options={{
-          tabBarIcon: RequestFormIcon,
-          tabBarLabel: 'Request Form',
-        }}
-      />
-      <Tab.Screen
-        name="DMOfficialMemo"
-        component={DMOfficialMemo}
-        options={{
-          tabBarIcon: AnnouncementIcon,
-          tabBarLabel: 'Official Memo',
-        }}
-      />
-      <Tab.Screen
-        name="EmployeeProfile"
-        component={EmployeeProfile}
-        options={{
-          tabBarIcon: UserIcon,
-          tabBarLabel: 'Profile',
-        }}
-      />
-      <Tab.Screen
-        name="DMWebView"
-        component={DMWebView}
-        options={{
-          tabBarIcon: WebviewIcon,
-          tabBarLabel: 'Web View',
-        }}
-      />
-    </Tab.Navigator>
-  );
-};
+const menuButton = () => <MenuButton />;
+const noTabBar = () => null;
 
-const DynamicTabNavigator: React.FC = () => {
+// Every page of the app, in sidebar order. Delivery, Sales and Purchase RFQ only for
+// the staff ERP allows them (the Employee record's custom_* flags).
+function pagesFor(flags: Flags): Page[] {
+  const pages: (Page | false)[] = [
+    { name: 'Attendance', label: 'Attendance', Icon: AttendanceIcon, component: AttendanceManagement },
+    { name: 'Directory', label: 'Directory', Icon: DirectoryIcon, component: EmployeeDirectory },
+    flags.showDelivery && { name: 'Delivery', label: 'Delivery', Icon: TripIcon, component: DeliveryTrip, section: 'Work' },
+    flags.showSales && { name: 'Sales RFQ', label: 'Sales RFQ', Icon: SalesRFQIcon, component: SalesPersonRFQ, section: 'Sales' },
+    flags.showSales && { name: 'Items Stock', label: 'Items Stock', Icon: ItemStockIcon, component: ItemsStock, section: 'Sales' },
+    flags.showSales && { name: 'Sales Outstanding', label: 'Sales Outstanding', Icon: OutstandingSalesIcon, component: SalesOutstanding, section: 'Sales' },
+    flags.showPurchaseRFQ && { name: 'Purchase RFQ', label: 'Purchase RFQ', Icon: RFQIcon, component: RFQ, section: 'Purchase' },
+    { name: 'Leave', label: 'Leave', Icon: LeaveIcon, component: LeaveManagement, section: 'My work' },
+    { name: 'AssignedTasks', label: 'Assigned Tasks', Icon: TaskManagementIcon, component: AssignedTasks, section: 'My work' },
+    { name: 'MaterialsServiceRequestForm', label: 'Request Form', Icon: RequestFormIcon, component: MaterialsServiceRequestForm, section: 'My work' },
+    { name: 'DMOfficialMemo', label: 'Official Memo', Icon: AnnouncementIcon, component: DMOfficialMemo, section: 'Company' },
+    { name: 'EmployeeProfile', label: 'Profile', Icon: UserIcon, component: EmployeeProfile, section: 'Company' },
+    { name: 'DMWebView', label: 'Web View', Icon: WebviewIcon, component: DMWebView, section: 'Company' },
+  ];
+  return pages.filter(Boolean) as Page[];
+}
+
+// The signed-in app: the sidebar (☰) instead of a bottom bar, and Chat as a round
+// button bottom right. The pages are still a tab navigator with its bar hidden, so each
+// keeps its state while you move between them.
+const Home: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { employeeDetails } = useContext(EmployeeContext);
   const unread = useUnread();
+  const [active, setActive] = useState('Attendance');
 
   const flags: Flags = {
     showSales: employeeDetails?.custom_allow_sales_rfq || false,
@@ -154,66 +88,36 @@ const DynamicTabNavigator: React.FC = () => {
     showChat: employeeDetails?.custom_allow_chat_module || false,
     showDelivery: employeeDetails?.custom_delivery_trip || false,
   };
+  const pages = useMemo(
+    () => pagesFor(flags),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [flags.showSales, flags.showPurchaseRFQ, flags.showDelivery],
+  );
 
   return (
-    <Tab.Navigator
-      screenOptions={{
-        tabBarActiveTintColor: '#103BA9',
-        tabBarInactiveTintColor: '#ccc',
-        headerShown: false,
-      }}
-    >
-      <Tab.Screen
-        name="Attendance"
-        component={AttendanceManagement}
-        options={{ tabBarIcon: AttendanceIcon }}
-      />
-      <Tab.Screen
-        name="Directory"
-        component={EmployeeDirectory}
-        options={{ tabBarIcon: DirectoryIcon }}
-      />
-      {flags.showDelivery && (
-        <Tab.Screen
-          name="Delivery"
-          component={DeliveryTrip}
-          options={{ tabBarIcon: TripIcon }}
-        />
-      )}
-      {flags.showSales && (
-        <Tab.Screen
-          name="Sales"
-          component={SalesNavigator}
-          options={{
-            tabBarIcon: SalesRFQIcon,
-          }}
-        />
-      )}
-      {flags.showPurchaseRFQ && (
-        <Tab.Screen
-          name="Purchase RFQ"
-          component={RFQ}
-          options={{ tabBarIcon: RFQIcon }}
-        />
-      )}
-      {flags.showChat && (
-        <Tab.Screen
-          name="Chat"
-          component={MessengerTab}
-          options={{
-            tabBarIcon: ChatIcon,
-            tabBarBadge: unread ? (unread > 99 ? '99+' : unread) : undefined,
-          }}
-        />
-      )}
-      <Tab.Screen
-        name="More"
-        component={MoreNavigator}
-        options={{
-          tabBarIcon: MoreIcon,
-        }}
-      />
-    </Tab.Navigator>
+    <AppShell
+      items={pages}
+      active={active}
+      onSelect={name => navigation.navigate('Home', { screen: name })}
+      name={employeeDetails?.employee_name}
+      subtitle={employeeDetails?.designation || employeeDetails?.department}
+      chat={flags.showChat ? { unread: unread || 0, onPress: () => navigation.navigate('Messenger') } : null}>
+      <Tab.Navigator
+        tabBar={noTabBar}
+        screenListeners={({ route }) => ({ focus: () => setActive(route.name) })}
+        screenOptions={{
+          headerShown: true,
+          headerLeft: menuButton,
+          headerStyle: { backgroundColor: BRAND_BLUE },
+          headerTintColor: '#FFFFFF',
+          headerTitleStyle: { fontWeight: '700' },
+          headerTitleAlign: 'left',
+        }}>
+        {pages.map(p => (
+          <Tab.Screen key={p.name} name={p.name} component={p.component} options={{ title: p.label }} />
+        ))}
+      </Tab.Navigator>
+    </AppShell>
   );
 };
 
@@ -248,7 +152,7 @@ const AppContent: React.FC = () => {
           </>
         ) : (
           <>
-            <Stack.Screen name="Home" component={DynamicTabNavigator} />
+            <Stack.Screen name="Home" component={Home} />
             <Stack.Screen name="TaskManagement" component={TaskManagement} />
             <Stack.Screen name="Messenger" component={MessengerScreen} />
           </>
