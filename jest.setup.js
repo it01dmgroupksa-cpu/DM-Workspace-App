@@ -51,6 +51,9 @@ jest.mock('@react-native-community/netinfo', () => ({
   useNetInfo: jest.fn(),
 }));
 
+// Reanimated 4 runs on react-native-worklets, whose native module is absent in tests
+// (the sidebar's drawer is the first screen to load Reanimated).
+jest.mock('react-native-worklets', () => require('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () =>
   require('react-native-reanimated/mock'),
 );

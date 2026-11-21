@@ -124,7 +124,7 @@ An employee may have Messenger open on the ERP desktop and on the phone at once.
 - **Sidebar.** The bottom tab bar is now a sidebar (☰): Attendance, Directory, Delivery /
   Sales / Purchase RFQ (for staff allowed them), Leave, Assigned Tasks, Request Form,
   Official Memo, Profile, Web View. Chat is the round button bottom right with the unread
-  count (`src/navigation/sidebar.tsx`). Screen names did not change.
+  count (`src/components/AppShell.tsx`).
 - **Web View** shares the app's ERP cookies, so the iPhone is signed in there too.
 - **Silent update.** These are JavaScript only (runtime `2`), so they go out without a store
   release: `npx eas-cli update --channel production --message "<what changed>"`. Phones

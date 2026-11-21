@@ -88,6 +88,10 @@ const DMWebViewScreen = () => {
           }
         }}
         mixedContentMode="never"
+        // The app signed in to ERP already: use its cookies, on iPhone too (WKWebView keeps
+        // its own cookie store unless told to share).
+        sharedCookiesEnabled={true}
+        thirdPartyCookiesEnabled={true}
         onShouldStartLoadWithRequest={({url}) => url.startsWith('https://')}
         javaScriptEnabled={true}
         domStorageEnabled={true}
