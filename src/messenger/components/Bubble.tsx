@@ -15,6 +15,7 @@ import {
 import type {Conversation, Message, Person} from '../types';
 import {pieces} from '../mentions';
 import {VoicePlayer} from './VoicePlayer';
+import {AgentCard} from './AgentCard';
 
 type Props = {
   m: Message;
@@ -104,6 +105,8 @@ export const Bubble = memo(function Bubble({
   onOriginal,
   progress,
 }: Props) {
+  // An approval card from the CEO agent: its own bubble with Approve / Reject.
+  if (m.sender === ASSISTANT && m.agent?.requestId && !m.deleted) return <AgentCard m={m} />;
   if (m.kind === 'system') {
     const call = callEntry(m);
     const pinned = pinEntry(m);
