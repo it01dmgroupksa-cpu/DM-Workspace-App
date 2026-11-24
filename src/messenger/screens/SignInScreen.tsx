@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -20,11 +20,13 @@ import {
   offerBiometric,
   useBiometric,
 } from '../../biometric';
+import OtpPrompt from '../../components/OtpPrompt';
+import {OtpError, TwoFactor, TwoFactorNeeded} from '../../twoFactor';
 
 // Messenger's own sign-in, with the same ERP username and password as the app. It stays
 // signed in for SESSION_DAYS, unlike the other tabs.
 export function SignInScreen({standalone}: {standalone?: boolean}) {
-  const {signIn, notice, lastUser} = useChatSession();
+  const {signIn, verifyOtp, notice, lastUser} = useChatSession();
   const navigation = useNavigation();
   const [username, setUsername] = useState(lastUser);
   const [password, setPassword] = useState('');
@@ -32,9 +34,33 @@ export function SignInScreen({standalone}: {standalone?: boolean}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const biometric = useBiometric();
+  // Two-factor step; the username and password wait in memory only, until success or Back.
+  const [challenge, setChallenge] = useState<TwoFactor | null>(null);
+  const pending = useRef<{user: string; pass: string; viaBiometric: boolean} | null>(
+    null,
+  );
   useEffect(() => {
     if (lastUser) setUsername(u => u || lastUser);
   }, [lastUser]);
+  useEffect(
+    () => () => {
+      pending.current = null;
+    },
+    [],
+  );
+
+  async function submitOtp(code: string) {
+    const waiting = pending.current;
+    if (!waiting || !challenge) throw new OtpError('expired');
+    await verifyOtp(challenge.tmpId, code, waiting.user);
+    pending.current = null;
+    if (!waiting.viaBiometric) offerBiometric(waiting.user.trim(), waiting.pass);
+  }
+  function leaveOtp(message?: string) {
+    pending.current = null;
+    setChallenge(null);
+    setError(message || '');
+  }
 
   // viaBiometric: the username and password came from Face ID, not the fields.
   async function submit(
@@ -50,6 +76,12 @@ export function SignInScreen({standalone}: {standalone?: boolean}) {
       await signIn(user, pass);
       if (!viaBiometric) offerBiometric(user.trim(), pass);
     } catch (e: any) {
+      if (e instanceof TwoFactorNeeded) {
+        pending.current = {user, pass, viaBiometric};
+        setChallenge(e.challenge);
+        setBusy(false);
+        return;
+      }
       if (viaBiometric && e.message === 'Wrong username or password.') {
         // The password was changed since Face ID saved it.
         await forgetCredentials();
@@ -87,6 +119,15 @@ export function SignInScreen({standalone}: {standalone?: boolean}) {
           <View style={styles.icon}>
             <Ionicons name="chatbubbles" size={40} color="#fff" />
           </View>
+          {challenge ? (
+            <OtpPrompt
+              challenge={challenge}
+              theme="dark"
+              onSubmit={submitOtp}
+              onBack={leaveOtp}
+            />
+          ) : (
+          <>
           <Text style={styles.title}>Messenger</Text>
           <Text style={styles.sub}>
             Sign in with your ERP username and password. Messenger stays signed
@@ -151,6 +192,8 @@ export function SignInScreen({standalone}: {standalone?: boolean}) {
               <Text style={styles.bioText}>Sign in with {biometric.label}</Text>
             </Pressable>
           ) : null}
+          </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

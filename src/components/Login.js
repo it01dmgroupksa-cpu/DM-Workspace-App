@@ -1,4 +1,4 @@
-import React, {useState, useContext} from 'react';
+import React, {useState, useContext, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,21 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-import {login, getEmployeeDetailsByUsername, getEmployeeShiftDetails} from '../../api';
+import {
+  login,
+  getEmployeeDetailsByUsername,
+  getEmployeeShiftDetails,
+  sameUserSignedIn,
+  verifyLoginOtp,
+} from '../../api';
+import OtpPrompt from './OtpPrompt';
+import {
+  OTP_TEXT,
+  OtpError,
+  TwoFactorNeeded,
+  deviceLang,
+  totpStep,
+} from '../twoFactor';
 import {EmployeeContext} from '../context/EmployeeContext';
 import {EyeIcon, EyeOffIcon, UserAppIcon} from './icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -34,6 +48,24 @@ const LoginScreen = () => {
   const chat = useChatSession();
   const unread = useUnread();
   const biometric = useBiometric();
+  // Two-factor step: what ERP needs for the code (tmp_id), and, in memory only, the
+  // username and password to finish signing in with. Both dropped on success, Back,
+  // expiry or leaving the screen.
+  const [challenge, setChallenge] = useState(null);
+  const pending = useRef(null);
+  useEffect(() => () => {
+    pending.current = null;
+  }, []);
+  // ERP forgets a pending sign-in after a few minutes; don't keep the password longer.
+  useEffect(() => {
+    if (!challenge) return;
+    const timer = setTimeout(() => {
+      pending.current = null;
+      setChallenge(null);
+      Alert.alert(OTP_TEXT[deviceLang()].expired);
+    }, 15 * 60 * 1000);
+    return () => clearTimeout(timer);
+  }, [challenge]);
 
 // viaBiometric: the username and password came from Face ID, not the fields.
 const handleLogin = async (
@@ -51,6 +83,58 @@ const handleLogin = async (
     const response = await login(username, pass);
 
     if (response.message === 'Logged In') {
+      await finishLogin(username, pass, viaBiometric);
+    } else if (response.twoFactor) {
+      // The password is right; this employee also needs the authenticator code,
+      // unless their session from an earlier code is still alive on this phone.
+      if (await sameUserSignedIn(username)) {
+        await finishLogin(username, pass, viaBiometric);
+      } else {
+        pending.current = {username, pass, viaBiometric};
+        setChallenge(response.twoFactor);
+      }
+    } else {
+      Alert.alert(
+        'Login Failed',
+        'Invalid username or password. Please try again.',
+      );
+    }
+  } catch (error) {
+    console.error("Login request failed.");
+    await loginFailed(error, viaBiometric);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+// Second step: the code. Rejects with an OtpError, which OtpPrompt shows.
+const submitOtp = async code => {
+  const waiting = pending.current;
+  if (!waiting || !challenge) throw new OtpError('expired');
+  const step = totpStep();
+  await verifyLoginOtp(challenge.tmpId, code);
+  pending.current = null;
+  setChallenge(null);
+  try {
+    await finishLogin(waiting.username, waiting.pass, waiting.viaBiometric, {
+      code,
+      step,
+    });
+  } catch (error) {
+    await loginFailed(error, false);
+  }
+};
+
+// Back to the password screen: the pending sign-in and password are dropped.
+const leaveOtp = message => {
+  pending.current = null;
+  setChallenge(null);
+  if (message) Alert.alert(message);
+};
+
+// Signed in to ERP: check the employee may use the app, then open it. `otp`: the code
+// just used, so Messenger's own sign-in can reuse it while it's still current.
+const finishLogin = async (username, pass, viaBiometric, otp = null) => {
       const employeeDetails = await getEmployeeDetailsByUsername(username);
 
       if (!employeeDetails.custom_allow_app) {
@@ -78,21 +162,30 @@ const handleLogin = async (
         }
 
         // One password entry also signs Messenger in (it then stays signed in for 30 days).
+        // Messenger has its own ERP session, so a two-factor user's code is needed
+        // there too: the one just entered is reused only while it's still the current
+        // code, so it can't count as a wrong attempt.
         if (employeeDetails.custom_allow_chat_module && chat.status === 'signedOut') {
-          chat.signIn(username, pass).catch(() => {});
+          chat
+            .signIn(username, pass)
+            .catch(error => {
+              if (
+                otp &&
+                error instanceof TwoFactorNeeded &&
+                totpStep() === otp.step
+              ) {
+                return chat.verifyOtp(error.challenge.tmpId, otp.code, username);
+              }
+            })
+            .catch(() => {});
         }
         if (!viaBiometric) offerBiometric(username, pass);
         setEmployeeDetails(employeeDetails);
         navigation.navigate('Home', { screen: 'Attendance' });
       }
-    } else {
-      Alert.alert(
-        'Login Failed',
-        'Invalid username or password. Please try again.',
-      );
-    }
-  } catch (error) {
-    console.error("Login request failed.");
+};
+
+const loginFailed = async (error, viaBiometric) => {
     if (error.response && error.response.data) {
       const errorData = error.response.data;
       if (
@@ -125,9 +218,6 @@ const handleLogin = async (
         'An unexpected error occurred. Please try again later.',
       );
     }
-  } finally {
-    setIsLoading(false);
-  }
 };
 
 
@@ -152,9 +242,20 @@ const handleLogin = async (
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContainer}>
+    <ScrollView
+      contentContainerStyle={styles.scrollContainer}
+      keyboardShouldPersistTaps="handled">
       <View style={styles.container}>
         <Image source={require('./images/dmlogo.png')} style={styles.logo} />
+        {challenge ? (
+          <OtpPrompt
+            challenge={challenge}
+            theme="light"
+            onSubmit={submitOtp}
+            onBack={leaveOtp}
+          />
+        ) : (
+        <>
         <Text style={styles.welcomeText}>Welcome Back</Text>
         <Text style={styles.subText}>Please sign in to continue</Text>
         <Text style={styles.audienceText}>
@@ -240,6 +341,8 @@ const handleLogin = async (
             {unread ? ` (${unread > 99 ? '99+' : unread})` : ''}
           </Text>
         </TouchableOpacity>
+        </>
+        )}
 
         <View style={styles.spacer} />
 

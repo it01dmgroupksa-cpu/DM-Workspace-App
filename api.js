@@ -2,6 +2,7 @@ import axios from 'axios';
 import moment from 'moment';
 import RNBlobUtil from 'react-native-blob-util';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { otpError, twoFactorFrom } from './src/twoFactor';
 
 const api = axios.create({
   baseURL: 'https://dmgroup.frappe.cloud/api/method',
@@ -22,15 +23,17 @@ const clearExpectHeader = config => {
 // Attach an interceptor to remove the Expect header
 api.interceptors.request.use(clearExpectHeader, error => Promise.reject(error));
 
+// device 'mobile': ERP keeps a mobile session longer than a desktop one, so a
+// two-factor user who signed in with a code isn't asked again on the next app open
+// (see sameUserSignedIn).
 export const login = async (email, password) => {
   try {
-     // Log email
-    
     const response = await api.post(
       'login',
       {
         usr: email,
         pwd: password,
+        device: 'mobile',
       },
       {
         headers: {
@@ -38,15 +41,17 @@ export const login = async (email, password) => {
         },
       },
     );
-    
-    // Log the entire response for debugging
 
-    
     // Check if response contains a 'Logged In' message
     const { message } = response.data;
-    
+
     if (message === 'Logged In') {
       return response.data; // return the response data, you don't need the token
+    }
+    // Password correct, but this user also needs the authenticator code.
+    const twoFactor = twoFactorFrom(response.data);
+    if (twoFactor) {
+      return { message: 'Two Factor', twoFactor };
     } else {
       console.error("Unexpected response format:");
       return { message: 'Login Failed' };
@@ -59,6 +64,42 @@ export const login = async (email, password) => {
       console.error("Login error:");
     }
     throw error; // Re-throw the error to be handled in the calling function
+  }
+};
+
+// Second sign-in step: the code from the authenticator app, for the pending sign-in
+// `tmpId`. Same client and cookie jar as login(), so the session ERP starts here is
+// the one every other call uses. Throws an OtpError; never logs the code or tmpId.
+export const verifyLoginOtp = async (tmpId, otp) => {
+  let response;
+  try {
+    response = await api.post(
+      'login',
+      { tmp_id: tmpId, otp, device: 'mobile' },
+      { timeout: 30000 },
+    );
+  } catch (error) {
+    throw otpError(error.response?.status || 0, error.response?.data);
+  }
+  if (response.data?.message !== 'Logged In') {
+    throw otpError(400, response.data); // answered, but no session: show ERP's text
+  }
+  return response.data;
+};
+
+// After a correct password, a two-factor user whose session from an earlier code is
+// still alive on this phone (same user) carries on without a new code.
+export const sameUserSignedIn = async username => {
+  try {
+    const response = await api.get('frappe.auth.get_logged_user', {
+      timeout: 10000,
+    });
+    const user = String(response.data?.message || '').toLowerCase();
+    return (
+      !!user && user !== 'guest' && user === String(username).trim().toLowerCase()
+    );
+  } catch {
+    return false;
   }
 };
 
