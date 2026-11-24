@@ -9,6 +9,7 @@ import {AppState} from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {ERP_ORIGIN} from './config';
+import {TwoFactorNeeded, otpError, twoFactorFrom} from '../twoFactor';
 
 // Messenger has its own ERP session, separate from the rest of the app (which asks for
 // the password every time it opens). It is a Frappe "mobile" session: ERP keeps it for
@@ -47,7 +48,13 @@ export function onBeforeSignOut(fn: (wipe: boolean) => Promise<void>) {
 }
 
 export class ErpError extends Error {
-  constructor(message: string, readonly status: number) {
+  // body: ERP's error answer, kept in memory to tell a wrong sign-in code from an
+  // expired one. Never logged.
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body: any = null,
+  ) {
     super(message);
   }
 }
@@ -76,8 +83,8 @@ export async function erpCall<T = any>(
     clearTimeout(timer);
   }
   if (!response.ok || json.exc || json.exc_type)
-    throw new ErpError(errorText(json, response.status), response.status);
-  return {message: json.message as T, response};
+    throw new ErpError(errorText(json, response.status), response.status, json);
+  return {message: json.message as T, response, body: json};
 }
 export function errorText(body: any, status: number) {
   let detail = '';
@@ -113,6 +120,7 @@ export function sidFrom(setCookie: string | null) {
 }
 
 // Signing in checks the password, who it is and that the chat module is allowed.
+// A two-factor user gets TwoFactorNeeded; then signInWithOtp finishes.
 export async function signIn(
   username: string,
   password: string,
@@ -133,7 +141,32 @@ export async function signIn(
     throw error;
   }
   const sid = sidFrom(login.response.headers.get('set-cookie'));
-  if (!sid) throw new Error("ERP didn't start a session. Try again.");
+  if (!sid) {
+    const challenge = twoFactorFrom(login.body);
+    if (challenge) throw new TwoFactorNeeded(challenge);
+    throw new Error("ERP didn't start a session. Try again.");
+  }
+  return finishSignIn(sid);
+}
+
+// Second step for a two-factor user: the authenticator code for the pending sign-in.
+// Throws an OtpError. Neither the code nor tmpId is stored or logged.
+export async function signInWithOtp(
+  tmpId: string,
+  otp: string,
+): Promise<Session> {
+  let login;
+  try {
+    login = await erpCall('login', {tmp_id: tmpId, otp, device: 'mobile'});
+  } catch (error: any) {
+    throw otpError(error.status ?? 0, error.body);
+  }
+  const sid = sidFrom(login.response.headers.get('set-cookie'));
+  if (!sid) throw otpError(400, login.body);
+  return finishSignIn(sid);
+}
+
+async function finishSignIn(sid: string): Promise<Session> {
   try {
     const {message: user} = await erpCall<string>(
       'frappe.auth.get_logged_user',
@@ -165,6 +198,7 @@ const Context = createContext<{
   session: Session | null;
   notice: string;
   signIn: (username: string, password: string) => Promise<void>;
+  verifyOtp: (tmpId: string, otp: string, username: string) => Promise<void>;
   signOut: (notice?: string) => Promise<void>;
   lastUser: string;
 } | null>(null);
@@ -258,9 +292,8 @@ export function ChatSessionProvider({children}: {children: React.ReactNode}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const doSignIn = useCallback(
-    async (username: string, password: string) => {
-      const next = await signIn(username, password);
+  const keep = useCallback(
+    async (next: Session, username: string) => {
       if (current && current.sid !== next.sid) await signOut();
       await SecureStore.setItemAsync(KEY, JSON.stringify(next), STORE);
       await AsyncStorage.setItem(LAST_USER, username.trim()).catch(() => {});
@@ -269,10 +302,28 @@ export function ChatSessionProvider({children}: {children: React.ReactNode}) {
     },
     [apply, signOut],
   );
+  const doSignIn = useCallback(
+    async (username: string, password: string) =>
+      keep(await signIn(username, password), username),
+    [keep],
+  );
+  const verifyOtp = useCallback(
+    async (tmpId: string, otp: string, username: string) =>
+      keep(await signInWithOtp(tmpId, otp), username),
+    [keep],
+  );
 
   return (
     <Context.Provider
-      value={{status, session, notice, signIn: doSignIn, signOut, lastUser}}>
+      value={{
+        status,
+        session,
+        notice,
+        signIn: doSignIn,
+        verifyOtp,
+        signOut,
+        lastUser,
+      }}>
       {children}
     </Context.Provider>
   );
