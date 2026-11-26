@@ -5,7 +5,15 @@ jest.mock('../src/messenger/session', () => ({
   currentSession: () => ({sid: 's1', user: 'ceo@dm.sa'}),
   erpCall: (...args: any[]) => mockErpCall(...args),
 }));
-import {decideTravel, travelActions, travelLines} from '../src/messenger/travel';
+import {
+  canChooseOption,
+  chosenOption,
+  decideTravel,
+  decideTravelOption,
+  optionView,
+  travelActions,
+  travelLines,
+} from '../src/messenger/travel';
 
 const doc = {doctype: 'Travel Request', name: 'HR-TRQ-1', modified: '2026-11-21 09:30:00', workflow_state: 'Pending Approval by CEO'};
 
@@ -71,5 +79,60 @@ describe('air ticket approval from Messenger', () => {
   it('marks a price typed in by hand', () => {
     const lines = travelLines({employeeName: 'A', itinerary: [], passengers: [], total: 900, currency: 'SAR', source: 'Manual', priceVerified: false} as any);
     expect(lines.find(l => l[0] === 'Price')![1]).toBe('900 SAR · entered by the coordinator');
+  });
+});
+
+describe('air ticket shortlist', () => {
+  const saudia = {
+    total: 1840, currency: 'SAR', source: 'Duffel', priceVerified: true,
+    offer: {
+      airline: {name: 'Saudia'},
+      slices: [
+        {origin: 'RUH', destination: 'COK', departAt: '2026-12-20T01:10:00', arriveAt: '2026-12-20T09:20:00', stops: 0, segments: [{flight: 'SV 780'}]},
+        {origin: 'COK', destination: 'RUH', departAt: '2027-01-10T11:00:00', arriveAt: '2027-01-10T19:45:00', stops: 1, segments: [{flight: 'AI 933'}, {flight: 'AI 921'}]},
+      ],
+    },
+  };
+  const manual = {summary: 'Flynas via JED', total: 1500, currency: 'SAR', source: 'Manual', priceVerified: false};
+  const base = {doctype: 'Travel Request', name: 'HR-TRQ-2', state: 'Pending Approval by CEO', employeeName: 'Badr Ali', passengers: [], itinerary: [], total: 1840, currency: 'SAR'} as any;
+
+  it('shows each option: legs, price and how it was checked', () => {
+    expect(optionView(saudia)).toEqual({
+      airline: 'Saudia',
+      legs: ['RUH → COK · 2026-12-20 01:10 → 09:20 · direct · SV 780', 'COK → RUH · 2027-01-10 11:00 → 19:45 · 1 stop · AI 933, AI 921'],
+      amount: '1840 SAR',
+      price: '1840 SAR · price checked',
+    });
+    expect(optionView(manual).legs).toEqual(['Flynas via JED']);
+    expect(optionView(manual).price).toBe('1500 SAR · entered by the coordinator');
+    expect(optionView(saudia, 'ar').legs[0]).toContain('مباشرة');
+  });
+
+  it('with a shortlist the flight and price move into the options', () => {
+    const labels = travelLines({...base, options: [saudia, manual]}).map(l => l[0]);
+    expect(labels).not.toContain('Price');
+    expect(labels).not.toContain('Flight');
+    expect(travelLines(base).map(l => l[0])).toContain('Price'); // no options: as before
+  });
+
+  it('the approver chooses only while pending and nothing is chosen', () => {
+    expect(canChooseOption({...base, options: [saudia]}, true)).toBe(true);
+    expect(canChooseOption({...base, options: [saudia]}, false)).toBe(false);
+    expect(canChooseOption({...base, options: [saudia], chosen: 0}, true)).toBe(false);
+    expect(canChooseOption({...base, options: [saudia], state: 'Approved'}, true)).toBe(false);
+    expect(canChooseOption({...base, options: []}, true)).toBe(false);
+    expect(chosenOption({chosen: null})).toBeNull();
+    expect(chosenOption({chosen: 0})).toBe(0);
+  });
+
+  it('approving option 2 sends option=2 as the approver', async () => {
+    mockErpCall.mockResolvedValueOnce({message: {ok: true}});
+    await decideTravelOption('HR-TRQ-2', 1);
+    expect(mockErpCall.mock.calls[0]).toEqual(['durar_air_ticket_decide', {name: 'HR-TRQ-2', option: 2}, 's1']);
+  });
+
+  it('once chosen, the card says who approved it', () => {
+    const lines = travelLines({...base, options: [saudia, manual], chosen: 0, approvedBy: 'CEO', approvedOn: '2026-11-26 10:15:00'});
+    expect(lines.find(l => l[0] === 'Approved by')![1]).toBe('CEO · 2026-11-26 10:15');
   });
 });
